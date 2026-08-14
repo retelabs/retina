@@ -7,6 +7,12 @@ use crate::error::ModelError;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TraceId([u8; 16]);
 
+impl TraceId {
+    pub fn as_bytes(&self) -> [u8; 16] {
+        self.0
+    }
+}
+
 impl TryFrom<&[u8]> for TraceId {
     type Error = ModelError;
 
@@ -25,6 +31,12 @@ impl TryFrom<&[u8]> for TraceId {
 /// non-all-zero.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SpanId([u8; 8]);
+
+impl SpanId {
+    pub fn as_bytes(&self) -> [u8; 8] {
+        self.0
+    }
+}
 
 impl TryFrom<&[u8]> for SpanId {
     type Error = ModelError;

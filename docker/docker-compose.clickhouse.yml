@@ -1,10 +1,12 @@
 services:
   clickhouse:
-    # Tag "lts" flottant volontairement (confort dev local) : ce n'est pas
+    # Tag "latest" flottant volontairement (confort dev local) : ce n'est pas
     # une frontière d'interopérabilité à verrouiller comme semconv/OTLP proto
     # (voir CLAUDE.md). Épingler une version exacte quand le choix
     # ClickHouse vs managé (ADR à venir) sera tranché pour la prod.
-    image: clickhouse/clickhouse-server:lts
+    # (Le tag "lts" utilisé initialement n'existe plus sur le registre —
+    # vérifié le 2026-08-14 via l'API Docker Hub avant de corriger.)
+    image: clickhouse/clickhouse-server:latest
     container_name: trellis-clickhouse-dev
     ports:
       - "8123:8123" # HTTP

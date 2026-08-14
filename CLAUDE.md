@@ -47,14 +47,24 @@ En pratique :
 6. Déploiement squelette (un seul cloud, une région, CI/CD via SaaS factory)
 7. Boucle de validation contre le cas fraudos (section 3)
 
-Étape 2 — **en cours** : `crates/otlp-receiver` compile
-`vendor/opentelemetry-proto` (`tonic-prost-build` + `protoc-bin-vendored`,
-pas de dépendance système à `protoc`), implémente `TraceService::export`,
-valide chaque span (trace_id/span_id, champs requis `gen_ai.*`) et convertit
-vers `kernel-model` via la couche de mapping `convert.rs`. Succès partiel
-géré (spans rejetés comptés, spans hors périmètre MVP non comptés comme
-rejets). Persistance encore un no-op (`SpanSink::InMemorySink`) — étape 3
-non commencée.
+Étape 2 : `crates/otlp-receiver` compile `vendor/opentelemetry-proto`
+(`tonic-prost-build` + `protoc-bin-vendored`, pas de dépendance système à
+`protoc`), implémente `TraceService::export`, valide chaque span
+(trace_id/span_id, champs requis `gen_ai.*`) et convertit vers `kernel-model`
+via la couche de mapping `convert.rs`. Succès partiel géré (spans rejetés
+comptés, spans hors périmètre MVP non comptés comme rejets).
+
+Étape 3 — **en cours** : `crates/clickhouse-sink` implémente `SpanSink`
+(devenu async/par lot/faillible — le driver `clickhouse` commit tout un
+`Insert` ou rien) contre une table unique `spans` (schéma et driver
+documentés dans `docs/interfaces/clickhouse-schema.md`,
+`crates/clickhouse-sink/migrations/0001_create_spans.sql`). Testé contre un
+vrai ClickHouse local (`scripts/dev-clickhouse.sh up`,
+`cargo test -p clickhouse-sink -- --ignored`) — deux erreurs non prévisibles
+depuis la doc seule ont été trouvées et documentées ce faisant (voir la fiche
+: ordre `LowCardinality(Nullable(_))`, et le bind de `[u8;N]` en paramètre de
+requête). Construit contre le ClickHouse local ; le choix du backend prod
+(auto-hébergé vs managé, GCP vs Azure) reste ouvert (dossier section 5).
 
 Chaque étape doit être testable indépendamment et fermée par une fiche de
 contrat dans `docs/interfaces/` si elle touche une frontière externe. Utilise

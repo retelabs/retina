@@ -33,7 +33,7 @@ En pratique :
 ## Ordre de construction du kernel MVP (dossier section 2.2)
 
 1. Modèle de données verrouillé (schéma `gen_ai.*` + extensions provider) —
-   **en cours** : `crates/kernel-model` (workspace Cargo racine) contient les 3
+   `crates/kernel-model` (workspace Cargo racine) contient les 3
    structs d'événement (`ModelCallEvent`, `ToolCallEvent`, `AgentRunEvent`),
    `AttributeValue`/`TokenCount`/`TraceId`/`SpanId`, et les enums semi-ouvertes
    `OperationName`/`ProviderName` — directement dérivés de
@@ -54,7 +54,7 @@ En pratique :
 via la couche de mapping `convert.rs`. Succès partiel géré (spans rejetés
 comptés, spans hors périmètre MVP non comptés comme rejets).
 
-Étape 3 — **en cours** : `crates/clickhouse-sink` implémente `SpanSink`
+Étape 3 : `crates/clickhouse-sink` implémente `SpanSink`
 (devenu async/par lot/faillible — le driver `clickhouse` commit tout un
 `Insert` ou rien) contre une table unique `spans` (schéma et driver
 documentés dans `docs/interfaces/clickhouse-schema.md`,
@@ -65,6 +65,18 @@ depuis la doc seule ont été trouvées et documentées ce faisant (voir la fich
 : ordre `LowCardinality(Nullable(_))`, et le bind de `[u8;N]` en paramètre de
 requête). Construit contre le ClickHouse local ; le choix du backend prod
 (auto-hébergé vs managé, GCP vs Azure) reste ouvert (dossier section 5).
+
+Étape 4 — **en cours** : `crates/query-api` (`axum` 0.8, attention à la
+syntaxe de route `{param}` et pas `:param`) expose les 3 endpoints minimaux
+(`GET /traces`, `GET /traces/{trace_id}`, `GET /metrics/summary`), documentés
+dans `docs/interfaces/query-api.md`. `/traces/{trace_id}` retourne une liste
+plate de spans (pas un arbre JSON imbriqué — le client reconstruit via
+`parent_span_id`). Résout l'incertitude laissée par l'étape 3 sur le
+paramétrage des requêtes par `trace_id` : binder la représentation hex
+(`String`) et utiliser `unhex(?)` côté SQL plutôt que binder `[u8;16]`
+directement. Testé à la fois via `tower::ServiceExt::oneshot` (5 tests
+d'intégration, `cargo test -p query-api -- --ignored`) et en lançant
+réellement le binaire (`cargo run -p query-api`) contre le ClickHouse local.
 
 Chaque étape doit être testable indépendamment et fermée par une fiche de
 contrat dans `docs/interfaces/` si elle touche une frontière externe. Utilise

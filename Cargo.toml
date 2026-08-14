@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/clickhouse-sink","crates/kernel-model", "crates/otlp-receiver", "crates/query-api"]
+members = ["crates/clickhouse-sink","crates/kernel-model", "crates/otlp-receiver", "crates/plugin-api", "crates/plugin-example", "crates/query-api"]
 
 [workspace.package]
 edition = "2024"

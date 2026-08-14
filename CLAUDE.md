@@ -78,6 +78,18 @@ directement. Testé à la fois via `tower::ServiceExt::oneshot` (5 tests
 d'intégration, `cargo test -p query-api -- --ignored`) et en lançant
 réellement le binaire (`cargo run -p query-api`) contre le ClickHouse local.
 
+Étape 5 — **en cours** : `crates/plugin-api` fixe le contrat d'interprétation
+v0 (trait `Plugin`, `KernelEvent<'a>` empruntant `kernel-model`,
+`PluginOutcome` infaillible — attributs + warnings, pas de rejet dur),
+documenté dans `docs/interfaces/plugin-contract-v0.md`. `crates/plugin-example`
+est le "plugin factice" que le dossier demande d'écrire pour valider le
+contrat (4 tests). Ne dépend pas de `otlp-receiver`/`clickhouse-sink` — pas
+encore câblé dans le pipeline, et volontairement générique (pas une ébauche
+du plugin fintech). Deux questions restent ouvertes pour plus tard : la
+modalité de chargement (trait Rust vs WASM `wasmtime`, dossier section 5) et
+où insérer l'appel plugin dans le pipeline — les deux dépendent du premier
+vertical réel (étape 7), pas à deviner maintenant.
+
 Chaque étape doit être testable indépendamment et fermée par une fiche de
 contrat dans `docs/interfaces/` si elle touche une frontière externe. Utilise
 `/kernel-status` pour un état des lieux.

@@ -1,0 +1,30 @@
+{# v2 span objects expose: type (semantic id like gen_ai.inference.client),
+   kind (client/server/internal), brief, note, stability, attributes,
+   and `name.note` -- a markdown blob describing the span name template
+   (e.g. "**Span name** SHOULD be `{gen_ai.operation.name} {gen_ai.request.model}`."). #}
+{% import 'stability.j2' as stability %}
+{% import 'signal_requirement_level.j2' as sr %}
+
+{# Span-name guidance is rendered from `span.name.note`. Refinements and imported
+   spans inherit the base span's `name` (weaver PR 1403), so provider docs get it
+   without repeating it in their own `note`. #}
+{% macro header(span) -%}
+**Status:** {{ stability.badge(span.stability, span.deprecated) }}
+
+{{ span.brief | trim }}
+{%- if span.note %}
+
+{{ span.note | trim }}{% endif %}
+{%- if span.name and span.name.note %}
+
+{{ span.name.note | trim }}{% endif %}
+{%- if "**Span kind" not in (span.note or "") %}
+
+**Span kind** SHOULD be `{{ span.kind | upper }}`.{% endif %}
+{%- if "**Span status" not in (span.note or "") %}
+
+**Span status** SHOULD follow the [Recording Errors]({{ params.upstream_docs_base }}/docs/general/recording-errors.md) document.{% endif %}
+
+{{ sr.render(span.requirement_level) }}
+
+{% endmacro %}

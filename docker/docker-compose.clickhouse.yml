@@ -1,0 +1,25 @@
+services:
+  clickhouse:
+    # Tag "lts" flottant volontairement (confort dev local) : ce n'est pas
+    # une frontière d'interopérabilité à verrouiller comme semconv/OTLP proto
+    # (voir CLAUDE.md). Épingler une version exacte quand le choix
+    # ClickHouse vs managé (ADR à venir) sera tranché pour la prod.
+    image: clickhouse/clickhouse-server:lts
+    container_name: trellis-clickhouse-dev
+    ports:
+      - "8123:8123" # HTTP
+      - "9000:9000" # native TCP
+    environment:
+      CLICKHOUSE_DB: observability
+      CLICKHOUSE_USER: dev
+      CLICKHOUSE_PASSWORD: dev
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - clickhouse-dev-data:/var/lib/clickhouse
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+
+volumes:
+  clickhouse-dev-data:

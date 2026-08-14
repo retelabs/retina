@@ -1,0 +1,15 @@
+[project]
+name = "anthropic-reference-test"
+version = "0.0.0"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic==0.120.2",
+    "genai-reference-shared",
+    "opentelemetry-util-genai==1.0b0",
+]
+
+[tool.uv.sources]
+genai-reference-shared = { path = "../../shared", editable = true }
+
+[tool.uv]
+package = false

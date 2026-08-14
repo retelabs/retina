@@ -1,0 +1,14 @@
+# Rust
+/target/
+**/target/
+
+# Outils/caches locaux non liés au projet
+/.fastembed_cache/
+
+# Éditeurs / OS
+.DS_Store
+*.swp
+
+# Env locaux
+.env
+.env.local

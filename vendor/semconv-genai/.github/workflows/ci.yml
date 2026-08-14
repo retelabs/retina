@@ -1,0 +1,225 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  merge_group:
+  workflow_call:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Link Check ─────────────────────────────────────────────────────
+  links:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # needed for merge-base used in modified-files mode
+          persist-credentials: false
+
+      - uses: jdx/mise-action@7e36c90d9ab29c415a2384db3006f3ec8a8cc654 # v4.2.4
+
+      - name: Check links for pull requests
+        if: github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_BASE_REF: ${{ github.base_ref }}
+          GITHUB_HEAD_REF: ${{ github.head_ref }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: mise run links
+
+      - name: Check links for pushes and merge queues
+        if: github.event_name != 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: mise run links
+
+  # ── Model Checks ───────────────────────────────────────────────────
+  policies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Load shared version pins
+        id: versions
+        uses: ./.github/actions/load-version-pins
+
+      - name: Install Weaver
+        uses: open-telemetry/weaver/.github/actions/setup-weaver@f8e1b42fbd1e09df5263c26b7df6011eaafd454d
+        with:
+          version: '${{ steps.versions.outputs.weaver_version }}'
+
+      - name: Validate model
+        run: make check-policies
+
+  generated-docs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Load shared version pins
+        id: versions
+        uses: ./.github/actions/load-version-pins
+
+      - name: Install Weaver
+        uses: open-telemetry/weaver/.github/actions/setup-weaver@f8e1b42fbd1e09df5263c26b7df6011eaafd454d
+        with:
+          version: '${{ steps.versions.outputs.weaver_version }}'
+
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+
+      - name: Regenerate and check committed outputs are in sync
+        run: |
+          make generate-all
+          if ! git diff --exit-code -- ./docs ./model AGENTS.md; then
+            echo "FAIL: committed generated outputs are out of sync!"
+            echo "Run 'make generate-all' and commit the changes."
+            exit 1
+          fi
+          untracked=$(git ls-files --others --exclude-standard -- ./docs ./model AGENTS.md)
+          if [ -n "$untracked" ]; then
+            echo "FAIL: untracked files under generated outputs:"
+            echo "$untracked"
+            exit 1
+          fi
+          echo "OK: committed generated outputs are up to date"
+
+  # ── Lint / Format ──────────────────────────────────────────────────
+  reference-python-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: reference
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "reference/**/uv.lock"
+
+      - name: Lint Python
+        run: uv tool run --from ruff ruff check src scenarios
+
+      - name: Check Python formatting
+        run: uv tool run --from ruff ruff format --check src scenarios
+
+  # ── Discover scenario matrices ─────────────────────────────────────
+  reference-scenario-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.matrices.outputs.matrix }}
+    defaults:
+      run:
+        working-directory: reference
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-reference-tooling
+
+      - name: Generate matrices
+        id: matrices
+        run: echo "matrix=$(uv run run-scenario --print-ci-matrix)" >> "$GITHUB_OUTPUT"
+
+  # ── Scenario Tests ──────────────────────────────────────
+  reference-scenarios:
+    runs-on: ubuntu-latest
+    needs: reference-scenario-matrix
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: reference
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.reference-scenario-matrix.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-reference-tooling
+
+      - name: Run implementation scenario
+        env:
+          SCENARIO_LIB: ${{ matrix.scenario.lib }}
+        run: uv run run-scenario "$SCENARIO_LIB"
+
+      - name: Check data file is up to date
+        env:
+          SCENARIO_DATA: ${{ matrix.scenario.data }}
+        run: |
+          git diff --exit-code -- "$SCENARIO_DATA"
+          untracked=$(git ls-files --others --exclude-standard -- "$SCENARIO_DATA")
+          if [ -n "$untracked" ]; then echo "Untracked data files: $untracked"; exit 1; fi
+
+  # ── Status Report ───────────────────────────────────────────────────
+  reference-status-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: reference
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Load shared version pins
+        id: versions
+        uses: ./.github/actions/load-version-pins
+
+      # The reports are built from weaver's resolution of model/, which is
+      # resolved on demand rather than committed.
+      - name: Install Weaver
+        uses: open-telemetry/weaver/.github/actions/setup-weaver@f8e1b42fbd1e09df5263c26b7df6011eaafd454d
+        with:
+          version: '${{ steps.versions.outputs.weaver_version }}'
+
+      - uses: ./.github/actions/setup-reference-tooling
+
+      - name: Generate status report
+        run: uv run --locked update-reports
+
+      - name: Check status report is up to date
+        run: git diff --exit-code -- README.md reports/
+
+  # ── Aggregate gate for branch protection ───────────────────────────
+  required-status-check:
+    if: always()
+    needs:
+      - links
+      - policies
+      - generated-docs
+      - reference-python-lint
+      - reference-scenario-matrix
+      - reference-scenarios
+      - reference-status-report
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail if any dependency did not pass
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
+        run: |
+          exit 1

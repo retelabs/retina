@@ -1,0 +1,95 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:best-practices",
+    "helpers:pinGitHubActionDigestsToSemver",
+    "github>grafana/flint#v0.22.10",
+  ],
+  // Security updates are owned by Dependabot. See .github/DEPENDENCIES.md.
+  "vulnerabilityAlerts": {
+    "enabled": false
+  },
+  "osvVulnerabilityAlerts": false,
+  "rebaseWhen": "conflicted", // Avoid rebasing after every main update
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^versions\\.env$/",
+        "/^model/manifest\\.yaml$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+) versioning=(?<versioning>\\S+)\\s+WEAVER_VERSION=(?<currentValue>\\S+)",
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+) versioning=(?<versioning>\\S+)(?:\\s+ref=\\S+)?\\s+POLICY_REPO_URL=(?<packageName>\\S+)\\s+POLICY_REPO_REF=(?<currentValue>\\S+)",
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+) versioning=(?<versioning>\\S+)(?:\\s+ref=\\S+)?\\s+CONFORMANCE_REPO_URL=(?<packageName>\\S+)\\s+CONFORMANCE_REF=(?<currentValue>\\S+)",
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+) versioning=(?<versioning>\\S+)\\s+- schema_url: https://opentelemetry\\.io/schemas/(?<currentValue>\\d+\\.\\d+\\.\\d+)",
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+) versioning=(?<versioning>\\S+)\\s+- schema_url: \\S+\\s+registry_path:.*?\\.git@(?<currentValue>v\\d+\\.\\d+\\.\\d+)\\[model\\]"
+      ]
+    },
+    {
+      // update otel in override-dependencies 
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^reference/scenarios/.*/pyproject\\.toml$/"
+      ],
+      "datasourceTemplate": "pypi",
+      "versioningTemplate": "pep440",
+      "matchStrings": [
+        "\"(?<depName>opentelemetry-[a-z0-9-]+)==(?<currentValue>[^\"]+)\""
+      ]
+    }
+  ],
+  "packageRules": [
+    {
+      // Bump the manifest git tag and its adjacent schema_url together.
+      "description": "Group upstream semantic-conventions manifest pins",
+      "matchDepNames": [
+        "open-telemetry/semantic-conventions"
+      ],
+      "groupName": "upstream semantic-conventions"
+    },
+    {
+      "description": "Allow opentelemetry-semantic-conventions pre-releases",
+      "matchDepNames": [
+        "opentelemetry-semantic-conventions"
+      ],
+      "ignoreUnstable": false
+    },
+    {
+      "description": "Non-major reference implementation updates",
+      "matchFileNames": [
+        "reference/**"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "pin",
+        "digest"
+      ],
+      "groupName": "reference implementation dependencies (non-major)",
+      "commitMessageTopic": "reference implementation dependencies (non-major)",
+      "schedule": [
+        "* 0-3 * * 2" // Tuesdays, 00:00–03:59 America/Los_Angeles
+      ],
+      "timezone": "America/Los_Angeles"
+    },
+    {
+      "description": "Monthly tooling dependency updates",
+      "groupName": "tooling dependencies",
+      "commitMessageTopic": "tooling dependencies",
+      "matchFileNames": [
+        ".github/**",
+        "changelog.d/**",
+        "docs/gen-ai/non-normative/**",
+        "mise.toml"
+      ],
+      "schedule": [
+        "* 0-3 2 * *" // 2nd of the month, 00:00–03:59 America/Los_Angeles
+      ],
+      "timezone": "America/Los_Angeles"
+    }
+  ],
+  "labels": [
+    "dependencies"
+  ]
+}

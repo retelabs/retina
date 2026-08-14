@@ -1,0 +1,19 @@
+name: Set up reference tooling
+description: >-
+  Install uv with caching keyed on reference lockfiles and sync the reference
+  tooling virtualenv from the committed lockfile. Used by every job under
+  reference/ to avoid duplicating the same three steps.
+
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+      with:
+        enable-cache: true
+        cache-dependency-glob: "reference/**/uv.lock"
+        python-version: "3.12"
+
+    - name: Install reference tooling
+      shell: bash
+      working-directory: reference
+      run: uv sync --locked

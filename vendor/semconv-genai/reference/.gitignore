@@ -1,0 +1,11 @@
+# Raw weaver live-check reports, one per scenario run.
+scenarios/*/output/
+scenarios/*/results/
+
+# Python
+.cache/
+.ruff_cache/
+__pycache__/
+.venv/
+*.egg-info/
+coverage-model.json

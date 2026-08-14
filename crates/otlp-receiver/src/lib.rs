@@ -9,6 +9,7 @@ pub mod service;
 pub mod sink;
 
 pub use convert::{ConvertError, ConvertedEvent, convert_span};
+pub use proto::opentelemetry::proto::collector::trace::v1::trace_service_client::TraceServiceClient;
 pub use proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceServiceServer;
 pub use service::Receiver;
 pub use sink::{InMemorySink, SpanSink};

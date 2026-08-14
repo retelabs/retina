@@ -1,0 +1,23 @@
+{
+  "session_id": "sess-2026-08-14-001",
+  "agent_role": "fraud_investigator",
+  "task_summary": "Investigate suspicious transaction TX-7F3A91 flagged by real-time scoring (score 0.94)",
+  "total_turns": 4,
+  "escalated_to_opus": true,
+  "tools_called": ["get_transaction_score", "get_account_profile", "get_similar_fraud_patterns", "create_investigation_case"],
+  "tools_failed": [],
+  "unique_tools": 4,
+  "success": true,
+  "requires_human_review": true,
+  "final_decision": "CONFIRMED_FRAUD",
+  "total_input_tokens": 8420,
+  "total_output_tokens": 1150,
+  "estimated_cost_usd": 0.1108,
+  "primary_model_id": "us.anthropic.claude-opus-4-5-20251101-v1:0",
+  "duration_seconds": 18.432,
+  "started_at": "2026-08-14T09:12:03.100000+00:00",
+  "ended_at": "2026-08-14T09:12:21.532000+00:00",
+  "case_id": "CASE-2026-04471",
+  "bank_id": "BANK-EU-002",
+  "transaction_id": "TX-7F3A91"
+}

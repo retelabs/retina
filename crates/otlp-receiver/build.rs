@@ -16,14 +16,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let proto_root = "../../vendor/opentelemetry-proto";
     println!("cargo:rerun-if-changed={proto_root}");
 
-    tonic_prost_build::configure()
-        .build_client(false)
-        .compile_protos(
-            &[format!(
-                "{proto_root}/opentelemetry/proto/collector/trace/v1/trace_service.proto"
-            )],
-            &[proto_root.to_string()],
-        )?;
+    // Client codegen was skipped until now (this crate only ever ran the
+    // server side) — turned on for dossier étape 7, which needs a real gRPC
+    // client to replay converted telemetry against a running kernel rather
+    // than only calling `convert_span`/`Receiver` in-process.
+    tonic_prost_build::configure().compile_protos(
+        &[format!(
+            "{proto_root}/opentelemetry/proto/collector/trace/v1/trace_service.proto"
+        )],
+        &[proto_root.to_string()],
+    )?;
 
     Ok(())
 }

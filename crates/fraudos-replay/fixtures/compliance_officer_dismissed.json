@@ -1,0 +1,23 @@
+{
+  "session_id": "sess-2026-08-14-002",
+  "agent_role": "compliance_officer",
+  "task_summary": "Review flagged transaction TX-1C88B2 for sanctions/AML exposure prior to release",
+  "total_turns": 3,
+  "escalated_to_opus": false,
+  "tools_called": ["check_sanctions", "get_kyc_status", "check_existing_reports"],
+  "tools_failed": ["check_existing_reports"],
+  "unique_tools": 3,
+  "success": true,
+  "requires_human_review": false,
+  "final_decision": "DISMISSED",
+  "total_input_tokens": 3210,
+  "total_output_tokens": 480,
+  "estimated_cost_usd": 0.01656,
+  "primary_model_id": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+  "duration_seconds": 7.881,
+  "started_at": "2026-08-14T10:05:44.000000+00:00",
+  "ended_at": "2026-08-14T10:05:51.881000+00:00",
+  "case_id": null,
+  "bank_id": "BANK-EU-002",
+  "transaction_id": "TX-1C88B2"
+}

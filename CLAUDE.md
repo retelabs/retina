@@ -78,7 +78,7 @@ directement. Testé à la fois via `tower::ServiceExt::oneshot` (5 tests
 d'intégration, `cargo test -p query-api -- --ignored`) et en lançant
 réellement le binaire (`cargo run -p query-api`) contre le ClickHouse local.
 
-Étape 5 — **en cours** : `crates/plugin-api` fixe le contrat d'interprétation
+Étape 5 : `crates/plugin-api` fixe le contrat d'interprétation
 v0 (trait `Plugin`, `KernelEvent<'a>` empruntant `kernel-model`,
 `PluginOutcome` infaillible — attributs + warnings, pas de rejet dur),
 documenté dans `docs/interfaces/plugin-contract-v0.md`. `crates/plugin-example`
@@ -89,6 +89,24 @@ du plugin fintech). Deux questions restent ouvertes pour plus tard : la
 modalité de chargement (trait Rust vs WASM `wasmtime`, dossier section 5) et
 où insérer l'appel plugin dans le pipeline — les deux dépendent du premier
 vertical réel (étape 7), pas à deviner maintenant.
+
+Étape 7 — **en cours** (étape 6, déploiement, volontairement différée) :
+validé contre le cas fraudos réel (`the fraudos prototype repository`, cloné
+en lecture seule, pas vendoré). **Correction au dossier section 3** :
+`fraudos-prototype` n'a en réalité aucune instrumentation ADOT/OTel — observabilité
+maison (`AgentSpan` → CloudWatch/DynamoDB) — et le score de fraude vient d'un
+appel outil (`get_transaction_score`), pas de la sortie du LLM. Détails et
+mapping complet dans `docs/interfaces/fraudos-agentspan.md`. Décision prise
+avec l'utilisateur : plutôt que de modifier `fraudos-prototype` (repo séparé,
+credentials AWS requises), `crates/fraudos-replay` convertit des `AgentSpan`
+réalistes (fixtures dans `fixtures/`, ancrées sur les vrais noms de rôles/
+outils/modèles du repo) en OTLP et les rejoue en gRPC réel contre
+`crates/kernel` (nouveau bin qui câble `otlp-receiver` + `clickhouse-sink` —
+premier binaire du kernel réellement exécutable). Vérifié de bout en bout à
+la main : `scripts/dev-clickhouse.sh up` → `cargo run -p kernel` → `cargo run
+-p fraudos-replay -- <fixture>` → requêtes réelles contre `query-api`,
+arbre de trace et agrégats corrects. `otlp-receiver` génère maintenant aussi
+le client gRPC (`TraceServiceClient`), pas seulement le serveur.
 
 Chaque étape doit être testable indépendamment et fermée par une fiche de
 contrat dans `docs/interfaces/` si elle touche une frontière externe. Utilise

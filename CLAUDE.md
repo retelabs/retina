@@ -47,6 +47,15 @@ En pratique :
 6. Déploiement squelette (un seul cloud, une région, CI/CD via SaaS factory)
 7. Boucle de validation contre le cas fraudos (section 3)
 
+Étape 2 — **en cours** : `crates/otlp-receiver` compile
+`vendor/opentelemetry-proto` (`tonic-prost-build` + `protoc-bin-vendored`,
+pas de dépendance système à `protoc`), implémente `TraceService::export`,
+valide chaque span (trace_id/span_id, champs requis `gen_ai.*`) et convertit
+vers `kernel-model` via la couche de mapping `convert.rs`. Succès partiel
+géré (spans rejetés comptés, spans hors périmètre MVP non comptés comme
+rejets). Persistance encore un no-op (`SpanSink::InMemorySink`) — étape 3
+non commencée.
+
 Chaque étape doit être testable indépendamment et fermée par une fiche de
 contrat dans `docs/interfaces/` si elle touche une frontière externe. Utilise
 `/kernel-status` pour un état des lieux.

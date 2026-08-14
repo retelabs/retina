@@ -18,6 +18,22 @@ pub enum AttributeValue {
     KeyValueList(Vec<(String, AttributeValue)>),
 }
 
+impl AttributeValue {
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            AttributeValue::String(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    pub fn as_int(&self) -> Option<i64> {
+        match self {
+            AttributeValue::Int(i) => Some(*i),
+            _ => None,
+        }
+    }
+}
+
 /// A single OTLP-shaped attribute: `(key, AnyValue)` (`common/v1/common.proto`,
 /// `KeyValue`). Kernel events keep unrecognized/provider-specific attributes as
 /// a flat `Vec` of these rather than a `Map`, because OTLP itself only

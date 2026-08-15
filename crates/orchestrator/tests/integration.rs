@@ -12,13 +12,17 @@ use std::time::Duration;
 
 use bollard::Docker;
 use orchestrator::docker_client::{
-    HealthCheckSpec, ManagedService, ServiceStatus, ensure_running, status, teardown, wait_healthy,
+    HealthCheckSpec, ImageSource, ManagedService, ServiceStatus, deploy_all, ensure_network,
+    ensure_running, status, teardown, teardown_all, wait_healthy,
 };
 
-fn test_service() -> ManagedService {
+const NETWORK: &str = "trellis-orchestrator-test-net";
+
+fn clickhouse_test_service(name: &str) -> ManagedService {
     ManagedService {
-        name: "trellis-orchestrator-test-clickhouse".to_string(),
+        name: name.to_string(),
         image: "clickhouse/clickhouse-server:latest".to_string(),
+        image_source: ImageSource::Registry,
         env: vec![
             "CLICKHOUSE_DB=observability".to_string(),
             "CLICKHOUSE_USER=dev".to_string(),
@@ -36,6 +40,8 @@ fn test_service() -> ManagedService {
             timeout: Duration::from_secs(2),
             retries: 30,
         }),
+        ports: vec![],
+        depends_on: vec![],
     }
 }
 
@@ -43,7 +49,8 @@ fn test_service() -> ManagedService {
 #[ignore = "requires a local Docker daemon"]
 async fn ensure_running_is_idempotent_and_reaches_healthy() {
     let docker = Docker::connect_with_local_defaults().expect("failed to connect to Docker");
-    let service = test_service();
+    let service = clickhouse_test_service("trellis-orchestrator-test-clickhouse");
+    ensure_network(&docker, NETWORK).await.unwrap();
 
     // Clean slate — a previous failed run shouldn't make this test flaky.
     teardown(&docker, &service.name).await.unwrap();
@@ -52,7 +59,7 @@ async fn ensure_running_is_idempotent_and_reaches_healthy() {
         ServiceStatus::Absent
     );
 
-    ensure_running(&docker, &service).await.unwrap();
+    ensure_running(&docker, NETWORK, &service).await.unwrap();
     let reached = wait_healthy(&docker, &service.name, Duration::from_secs(60))
         .await
         .unwrap();
@@ -62,7 +69,7 @@ async fn ensure_running_is_idempotent_and_reaches_healthy() {
     // already-healthy container must not error (the "start on an already
     // started container" 304 path, and the "container already exists"
     // path).
-    ensure_running(&docker, &service).await.unwrap();
+    ensure_running(&docker, NETWORK, &service).await.unwrap();
     assert_eq!(
         status(&docker, &service.name).await.unwrap(),
         ServiceStatus::Healthy
@@ -77,4 +84,44 @@ async fn ensure_running_is_idempotent_and_reaches_healthy() {
     // Idempotent teardown too — tearing down something already absent
     // must not error either.
     teardown(&docker, &service.name).await.unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires a local Docker daemon"]
+async fn deploy_all_brings_up_a_dependency_chain_and_teardown_all_clears_it() {
+    let docker = Docker::connect_with_local_defaults().expect("failed to connect to Docker");
+
+    let dependency = clickhouse_test_service("trellis-orchestrator-test-chain-a");
+    let mut dependent = clickhouse_test_service("trellis-orchestrator-test-chain-b");
+    dependent.depends_on = vec![dependency.name.clone()];
+    // No healthcheck on the dependent — exercises wait_healthy's "running,
+    // no healthcheck configured" success path, distinct from the
+    // dependency's real one.
+    dependent.healthcheck = None;
+    let services = vec![dependency, dependent];
+
+    for s in &services {
+        teardown(&docker, &s.name).await.unwrap();
+    }
+
+    deploy_all(&docker, NETWORK, &services).await.unwrap();
+    for s in &services {
+        let current = status(&docker, &s.name).await.unwrap();
+        assert!(
+            matches!(
+                current,
+                ServiceStatus::Healthy | ServiceStatus::RunningNoHealthcheck
+            ),
+            "expected {} to be up, got {current:?}",
+            s.name
+        );
+    }
+
+    teardown_all(&docker, &services).await.unwrap();
+    for s in &services {
+        assert_eq!(
+            status(&docker, &s.name).await.unwrap(),
+            ServiceStatus::Absent
+        );
+    }
 }

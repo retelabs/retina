@@ -7,15 +7,19 @@
 //! renamed things across versions (`ContainerCreateBody` instead of the
 //! older `Config<String>`), so this was worth checking for real.
 
+use std::collections::HashMap;
 use std::fmt;
 use std::time::Duration;
 
 use bollard::Docker;
 use bollard::errors::Error as BollardError;
-use bollard::models::{ContainerCreateBody, ContainerState, HealthConfig, HealthStatusEnum};
+use bollard::models::{
+    ContainerCreateBody, ContainerState, HealthConfig, HealthStatusEnum, HostConfig,
+    NetworkCreateRequest, NetworkCreateResponse, PortBinding,
+};
 use bollard::query_parameters::{
     CreateContainerOptions, CreateImageOptions, InspectContainerOptions, ListContainersOptions,
-    RemoveContainerOptions, StartContainerOptions, StopContainerOptions,
+    ListNetworksOptions, RemoveContainerOptions, StartContainerOptions, StopContainerOptions,
 };
 use futures_util::StreamExt;
 
@@ -29,6 +33,19 @@ pub enum OrchestratorError {
         service: String,
         waited: Duration,
     },
+    /// `ImageSource::Local` and the image isn't there — this control plane
+    /// doesn't build images yet (docs/interfaces/docker-engine-api.md),
+    /// build via the existing Dockerfile path first.
+    MissingLocalImage(String),
+    /// A `depends_on` names a service that isn't in the batch being
+    /// deployed — caught before touching Docker at all, not left to
+    /// surface as a confusing runtime failure partway through a deploy.
+    UnknownDependency {
+        service: String,
+        depends_on: String,
+    },
+    /// `depends_on` edges form a cycle — no valid deployment order exists.
+    DependencyCycle,
 }
 
 impl fmt::Display for OrchestratorError {
@@ -37,6 +54,20 @@ impl fmt::Display for OrchestratorError {
             OrchestratorError::Docker(e) => write!(f, "docker API error: {e}"),
             OrchestratorError::HealthTimeout { service, waited } => {
                 write!(f, "`{service}` did not report healthy within {waited:?}")
+            }
+            OrchestratorError::MissingLocalImage(image) => write!(
+                f,
+                "image `{image}` not found locally and is not pulled from a registry — build it first"
+            ),
+            OrchestratorError::UnknownDependency {
+                service,
+                depends_on,
+            } => write!(
+                f,
+                "`{service}` depends_on `{depends_on}`, which isn't in this deployment batch"
+            ),
+            OrchestratorError::DependencyCycle => {
+                write!(f, "depends_on edges form a cycle — no valid deploy order")
             }
         }
     }
@@ -76,11 +107,37 @@ impl From<&HealthCheckSpec> for HealthConfig {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageSource {
+    /// Pulled from a registry if not already present locally — what
+    /// `clickhouse/clickhouse-server:latest` is.
+    Registry,
+    /// Must already exist locally (built via `docker build -f
+    /// docker/<name>.Dockerfile ...`, the same Dockerfiles
+    /// `docker/docker-compose.stack.yml` uses) — this control plane
+    /// doesn't drive an image build itself yet.
+    Local,
+}
+
+/// A published `container_port -> host_port` mapping, TCP only (the only
+/// protocol either `kernel` or `query-api` speaks).
+pub struct PortSpec {
+    pub container_port: u16,
+    pub host_port: u16,
+}
+
 pub struct ManagedService {
     pub name: String,
     pub image: String,
+    pub image_source: ImageSource,
     pub env: Vec<String>,
     pub healthcheck: Option<HealthCheckSpec>,
+    pub ports: Vec<PortSpec>,
+    /// Names of other `ManagedService`s (in the same deploy batch) that
+    /// must be healthy before this one starts — `deploy_all` reads this to
+    /// order the rollout, matching `depends_on: condition: service_healthy`
+    /// in `docker/docker-compose.stack.yml`.
+    pub depends_on: Vec<String>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -113,34 +170,96 @@ async fn container_exists(docker: &Docker, name: &str) -> Result<bool, Orchestra
     Ok(!containers.is_empty())
 }
 
-/// Pulls `image` if the daemon doesn't already have it. Streams progress
-/// events (`create_image` doesn't actually pull anything until the stream
-/// is driven — a lazy `Stream`, not a future, the one real gotcha here).
-async fn ensure_image(docker: &Docker, image: &str) -> Result<(), OrchestratorError> {
-    let options = CreateImageOptions {
-        from_image: Some(image.to_string()),
-        ..Default::default()
-    };
-    let mut pull = docker.create_image(Some(options), None, None);
-    while let Some(event) = pull.next().await {
-        event?;
+/// For `Registry`: pulls `image` if the daemon doesn't already have it.
+/// Streams progress events (`create_image` doesn't actually pull anything
+/// until the stream is driven — a lazy `Stream`, not a future, the one real
+/// gotcha here). For `Local`: just confirms it's there, or reports
+/// precisely which image is missing rather than letting `create_container`
+/// fail later with a less specific error.
+async fn ensure_image(
+    docker: &Docker,
+    image: &str,
+    source: ImageSource,
+) -> Result<(), OrchestratorError> {
+    match source {
+        ImageSource::Registry => {
+            let options = CreateImageOptions {
+                from_image: Some(image.to_string()),
+                ..Default::default()
+            };
+            let mut pull = docker.create_image(Some(options), None, None);
+            while let Some(event) = pull.next().await {
+                event?;
+            }
+            Ok(())
+        }
+        ImageSource::Local => docker
+            .inspect_image(image)
+            .await
+            .map(|_| ())
+            .map_err(|e| match e {
+                BollardError::DockerResponseServerError {
+                    status_code: 404, ..
+                } => OrchestratorError::MissingLocalImage(image.to_string()),
+                other => OrchestratorError::Docker(other),
+            }),
     }
-    Ok(())
+}
+
+/// Same shape as `bollard::models::PortMap`, spelled out locally so
+/// `port_config`'s signature doesn't trip `clippy::type_complexity`.
+type PortBindings = HashMap<String, Option<Vec<PortBinding>>>;
+
+/// Builds the `{"<port>/tcp": {}}` exposed-ports declaration and the
+/// `HostConfig.port_bindings` map that actually publishes to the host — the
+/// real Engine API wants both (`ExposedPorts` declares the port exists,
+/// `PortBindings` is what maps it out), matching what `docker run -p`
+/// sets under the hood.
+fn port_config(ports: &[PortSpec]) -> (Option<Vec<String>>, Option<PortBindings>) {
+    if ports.is_empty() {
+        return (None, None);
+    }
+    let mut exposed = Vec::with_capacity(ports.len());
+    let mut bindings = HashMap::with_capacity(ports.len());
+    for p in ports {
+        let key = format!("{}/tcp", p.container_port);
+        exposed.push(key.clone());
+        bindings.insert(
+            key,
+            Some(vec![PortBinding {
+                host_ip: None,
+                host_port: Some(p.host_port.to_string()),
+            }]),
+        );
+    }
+    (Some(exposed), Some(bindings))
 }
 
 /// Idempotent: safe to call whether the container has never existed, exists
-/// but is stopped, or is already running.
+/// but is stopped, or is already running. Attaches the container to
+/// `network` (a user-defined network — required for containers to resolve
+/// each other by name; Docker's default `bridge` network does *not* give
+/// containers DNS resolution by name, only a user-defined one does, which
+/// is why `deploy_all` always creates one via `ensure_network` first).
 pub async fn ensure_running(
     docker: &Docker,
+    network: &str,
     service: &ManagedService,
 ) -> Result<(), OrchestratorError> {
     if !container_exists(docker, &service.name).await? {
-        ensure_image(docker, &service.image).await?;
+        ensure_image(docker, &service.image, service.image_source).await?;
 
+        let (exposed_ports, port_bindings) = port_config(&service.ports);
         let config = ContainerCreateBody {
             image: Some(service.image.clone()),
             env: Some(service.env.clone()),
             healthcheck: service.healthcheck.as_ref().map(HealthConfig::from),
+            exposed_ports,
+            host_config: Some(HostConfig {
+                network_mode: Some(network.to_string()),
+                port_bindings,
+                ..Default::default()
+            }),
             ..Default::default()
         };
         let options = CreateContainerOptions {
@@ -162,6 +281,133 @@ pub async fn ensure_running(
             other => Err(other),
         })?;
 
+    Ok(())
+}
+
+/// Idempotent: creates the user-defined network `deploy_all` attaches every
+/// managed container to, unless it already exists.
+///
+/// The check-then-create below is a real TOCTOU race, not a hypothetical
+/// one — found by this crate's own test suite, where two `#[tokio::test]`s
+/// both call `ensure_network` on the same name and run concurrently by
+/// default. Both see "doesn't exist" from `list_networks` before either has
+/// created it, both call `create_network`, and the loser gets a 409. Rather
+/// than serialize the check (which wouldn't fully close the race against a
+/// second *process* anyway), the fix is the same shape as
+/// `ensure_running`'s already-started handling: treat "already exists" as
+/// success, because for an idempotent "ensure" call that's exactly what it
+/// is.
+pub async fn ensure_network(docker: &Docker, name: &str) -> Result<(), OrchestratorError> {
+    let options = ListNetworksOptions {
+        filters: Some(HashMap::from([(
+            "name".to_string(),
+            vec![name.to_string()],
+        )])),
+    };
+    let existing = docker.list_networks(Some(options)).await?;
+    if existing.iter().any(|n| n.name.as_deref() == Some(name)) {
+        return Ok(());
+    }
+    docker
+        .create_network(NetworkCreateRequest {
+            name: name.to_string(),
+            ..Default::default()
+        })
+        .await
+        .or_else(|e| match e {
+            BollardError::DockerResponseServerError {
+                status_code: 409, ..
+            } => Ok(NetworkCreateResponse::default()),
+            other => Err(other),
+        })?;
+    Ok(())
+}
+
+/// Orders `services` so every dependency comes before its dependents
+/// (Kahn's algorithm) — deterministic for a fixed input order, since ties
+/// are broken by the services' original position rather than by iterating
+/// a `HashMap`.
+fn topological_order(
+    services: &[ManagedService],
+) -> Result<Vec<&ManagedService>, OrchestratorError> {
+    let mut in_degree: HashMap<&str, usize> =
+        services.iter().map(|s| (s.name.as_str(), 0)).collect();
+    let mut dependents: HashMap<&str, Vec<&str>> = HashMap::new();
+
+    for s in services {
+        for dep in &s.depends_on {
+            if !in_degree.contains_key(dep.as_str()) {
+                return Err(OrchestratorError::UnknownDependency {
+                    service: s.name.clone(),
+                    depends_on: dep.clone(),
+                });
+            }
+            *in_degree.get_mut(s.name.as_str()).unwrap() += 1;
+            dependents.entry(dep.as_str()).or_default().push(&s.name);
+        }
+    }
+
+    let mut queue: std::collections::VecDeque<&str> = services
+        .iter()
+        .filter(|s| in_degree[s.name.as_str()] == 0)
+        .map(|s| s.name.as_str())
+        .collect();
+
+    let mut ordered_names = Vec::with_capacity(services.len());
+    while let Some(name) = queue.pop_front() {
+        ordered_names.push(name);
+        if let Some(deps) = dependents.get(name) {
+            for &dependent in deps {
+                let entry = in_degree.get_mut(dependent).unwrap();
+                *entry -= 1;
+                if *entry == 0 {
+                    queue.push_back(dependent);
+                }
+            }
+        }
+    }
+
+    if ordered_names.len() != services.len() {
+        return Err(OrchestratorError::DependencyCycle);
+    }
+
+    let by_name: HashMap<&str, &ManagedService> =
+        services.iter().map(|s| (s.name.as_str(), s)).collect();
+    Ok(ordered_names.into_iter().map(|n| by_name[n]).collect())
+}
+
+/// Deploys a batch of services in dependency order: creates the shared
+/// network, then for each service (dependencies before dependents) ensures
+/// it's running and waits for it to be healthy before moving on to
+/// whatever depends on it. By the time a dependent's `ensure_running` runs,
+/// everything it `depends_on` is already healthy — exactly what
+/// `docker-compose`'s `depends_on: condition: service_healthy` gives you,
+/// implemented from the API up instead of consumed as a compose feature.
+pub async fn deploy_all(
+    docker: &Docker,
+    network: &str,
+    services: &[ManagedService],
+) -> Result<(), OrchestratorError> {
+    ensure_network(docker, network).await?;
+
+    for service in topological_order(services)? {
+        ensure_running(docker, network, service).await?;
+        wait_healthy(docker, &service.name, Duration::from_secs(60)).await?;
+    }
+
+    Ok(())
+}
+
+/// Tears down a batch in reverse dependency order (dependents before their
+/// dependencies) — cleaner shutdown, though Docker itself doesn't enforce
+/// this ordering the way it enforces creation-time network attachment.
+pub async fn teardown_all(
+    docker: &Docker,
+    services: &[ManagedService],
+) -> Result<(), OrchestratorError> {
+    for service in topological_order(services)?.into_iter().rev() {
+        teardown(docker, &service.name).await?;
+    }
     Ok(())
 }
 
@@ -246,4 +492,84 @@ pub async fn teardown(docker: &Docker, name: &str) -> Result<(), OrchestratorErr
         .await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn service(name: &str, depends_on: &[&str]) -> ManagedService {
+        ManagedService {
+            name: name.to_string(),
+            image: "unused:latest".to_string(),
+            image_source: ImageSource::Registry,
+            env: vec![],
+            healthcheck: None,
+            ports: vec![],
+            depends_on: depends_on.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn topological_order_places_dependencies_before_dependents() {
+        // Deliberately listed out of order (kernel/query-api before their
+        // dependency) — the sort, not input order, must produce this.
+        let services = vec![
+            service("kernel", &["clickhouse"]),
+            service("query-api", &["clickhouse"]),
+            service("clickhouse", &[]),
+        ];
+        let order: Vec<&str> = topological_order(&services)
+            .unwrap()
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect();
+
+        let clickhouse_pos = order.iter().position(|&n| n == "clickhouse").unwrap();
+        let kernel_pos = order.iter().position(|&n| n == "kernel").unwrap();
+        let query_api_pos = order.iter().position(|&n| n == "query-api").unwrap();
+        assert!(clickhouse_pos < kernel_pos);
+        assert!(clickhouse_pos < query_api_pos);
+    }
+
+    #[test]
+    fn topological_order_rejects_a_dependency_outside_the_batch() {
+        let services = vec![service("kernel", &["ghost"])];
+        assert!(matches!(
+            topological_order(&services),
+            Err(OrchestratorError::UnknownDependency { .. })
+        ));
+    }
+
+    #[test]
+    fn topological_order_rejects_a_cycle() {
+        let services = vec![service("a", &["b"]), service("b", &["a"])];
+        assert!(matches!(
+            topological_order(&services),
+            Err(OrchestratorError::DependencyCycle)
+        ));
+    }
+
+    #[test]
+    fn topological_order_is_deterministic_for_independent_services() {
+        // No edges between "b" and "c" — several orders are valid
+        // topologically, but the function should still return the same one
+        // every time (input order breaks ties), not vary run to run.
+        let services = vec![
+            service("a", &[]),
+            service("b", &["a"]),
+            service("c", &["a"]),
+        ];
+        let first: Vec<&str> = topological_order(&services)
+            .unwrap()
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect();
+        let second: Vec<&str> = topological_order(&services)
+            .unwrap()
+            .iter()
+            .map(|s| s.name.as_str())
+            .collect();
+        assert_eq!(first, second);
+    }
 }

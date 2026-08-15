@@ -348,11 +348,42 @@ Vérifié contre le vrai démon Docker local : cycle de vie complet
 un conteneur déjà sain ne casse rien, `teardown` rappelé sur un conteneur
 déjà absent non plus.
 
+**Étendu à `kernel`/`query-api` — fait.** `ManagedService` gagne
+`image_source` (`Registry` vs `Local` — `kernel`/`query-api` doivent déjà
+être construits via `docker/docker-compose.stack.yml`, ce control plane ne
+construit pas d'image lui-même), `ports`, `depends_on`. `deploy_all` trie
+les services par dépendance (tri topologique, algorithme de Kahn,
+déterministe) puis, dans cet ordre, `ensure_running` + `wait_healthy` avant
+le suivant — au moment où `kernel`/`query-api` démarrent, ClickHouse est
+déjà sain, exactement ce que `depends_on: condition: service_healthy` donne
+sous `docker compose`, reconstruit depuis l'API.
+
+Trouvaille structurante : les conteneurs du réseau `bridge` par défaut de
+Docker ne se résolvent **pas** par nom — seul un réseau défini par
+l'utilisateur le permet. `ensure_network` crée un tel réseau et
+`ensure_running` y attache chaque conteneur (`HostConfig.network_mode`)
+pour que `kernel` joigne `CLICKHOUSE_URL=http://<nom du conteneur>:8123`.
+**Deuxième trouvaille, une vraie race, pas construite exprès** : la propre
+suite de tests du crate (deux tests qui appellent `ensure_network` sur le
+même nom, tournant en parallèle par défaut) a fait échouer le
+vérifier-puis-créer initial avec un `409` — corrigé en traitant "already
+exists" comme un succès, même logique que le `304` déjà géré pour
+`start_container`. Reproduit et corrigé, pas juste contourné dans le test.
+
+Vérifié bout en bout réel, pas seulement `docker inspect` :
+`cargo run -p orchestrator -- --keep-running` déploie les 3 services, un
+vrai rejeu gRPC (`fraudos-replay`) contre `localhost:4317` et une vraie
+requête HTTP authentifiée contre `localhost:8080/metrics/summary`
+confirment que `kernel` a réellement écrit dans ClickHouse via le réseau
+partagé et que `query-api` relit les mêmes données. Plus 4 tests unitaires
+(`topological_order`, sans Docker) et 2 tests d'intégration `--ignored`
+contre un vrai démon, chacun relancé plusieurs fois pour confirmer que le
+fix de la race n'était pas un coup de chance.
+
 Pas encore fait : API HTTP (le binaire ne fait que prouver le client Docker
-pour l'instant), `kernel`/`query-api` (dépendance d'ordre sur ClickHouse
-healthy, plus besoin de construire leurs images via l'API), publication de
-ports, et un deuxième chantier envisagé pour le même objectif d'apprentissage
-— une méthode de calcul de coût réel.
+pour l'instant), construction d'image via l'API Docker, et un deuxième
+chantier envisagé pour le même objectif d'apprentissage — une méthode de
+calcul de coût réel.
 
 ## Hors périmètre volontaire du MVP (dossier section 4)
 

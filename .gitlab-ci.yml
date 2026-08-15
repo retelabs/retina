@@ -1,0 +1,88 @@
+# Pipeline CI/CD (dossier étape 6 — squelette, pas une infra de prod
+# robuste). Vérifié seulement en local (build Docker réel, `docker compose`
+# de bout en bout — voir CLAUDE.md) : ce fichier n'a pas encore tourné sur
+# un vrai runner GitLab tant que la branche n'est pas poussée.
+
+stages:
+  - check
+  - test
+  - build-images
+
+variables:
+  CARGO_HOME: $CI_PROJECT_DIR/.cargo
+
+.cargo-cache: &cargo-cache
+  cache:
+    key:
+      files:
+        - Cargo.lock
+    paths:
+      - .cargo/registry
+      - target/
+
+fmt:
+  stage: check
+  image: rust:1.97.1-slim-bookworm
+  <<: *cargo-cache
+  script:
+    - cargo fmt --check
+
+clippy:
+  stage: check
+  image: rust:1.97.1-slim-bookworm
+  <<: *cargo-cache
+  script:
+    - cargo clippy --workspace --all-targets -- -D warnings
+
+# Couvre à la fois les tests par défaut (cargo test --workspace) et les
+# tests d'intégration marqués #[ignore] qui ont besoin d'un vrai ClickHouse
+# (crates/clickhouse-sink, crates/query-api — chacun applique sa propre
+# migration au démarrage du test, pas d'étape d'init séparée ici).
+test:
+  stage: test
+  image: rust:1.97.1-slim-bookworm
+  <<: *cargo-cache
+  services:
+    - name: clickhouse/clickhouse-server:latest
+      alias: clickhouse
+  variables:
+    CLICKHOUSE_DB: observability
+    CLICKHOUSE_USER: dev
+    CLICKHOUSE_PASSWORD: dev
+    CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    CLICKHOUSE_URL: http://clickhouse:8123
+    CLICKHOUSE_DATABASE: observability
+  script:
+    - cargo test --workspace
+    - cargo test --workspace -- --ignored
+
+.docker-build-push: &docker-build-push
+  stage: build-images
+  image: docker:28-cli
+  services:
+    - docker:28-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_CERTDIR: "/certs"
+  rules:
+    # Squelette volontairement minimal (dossier section 2.2 étape 6) : push
+    # d'image seulement sur main, la branche stable — pas à chaque commit
+    # sur dev. Le Dockerfile reste validé localement (`docker build`) le
+    # reste du temps, voir CLAUDE.md.
+    - if: $CI_COMMIT_BRANCH == "main"
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" --password-stdin
+
+build-kernel-image:
+  <<: *docker-build-push
+  script:
+    - docker build -f docker/kernel.Dockerfile -t "$CI_REGISTRY_IMAGE/kernel:$CI_COMMIT_SHORT_SHA" -t "$CI_REGISTRY_IMAGE/kernel:latest" .
+    - docker push "$CI_REGISTRY_IMAGE/kernel:$CI_COMMIT_SHORT_SHA"
+    - docker push "$CI_REGISTRY_IMAGE/kernel:latest"
+
+build-query-api-image:
+  <<: *docker-build-push
+  script:
+    - docker build -f docker/query-api.Dockerfile -t "$CI_REGISTRY_IMAGE/query-api:$CI_COMMIT_SHORT_SHA" -t "$CI_REGISTRY_IMAGE/query-api:latest" .
+    - docker push "$CI_REGISTRY_IMAGE/query-api:$CI_COMMIT_SHORT_SHA"
+    - docker push "$CI_REGISTRY_IMAGE/query-api:latest"

@@ -90,8 +90,7 @@ modalité de chargement (trait Rust vs WASM `wasmtime`, dossier section 5) et
 où insérer l'appel plugin dans le pipeline — les deux dépendent du premier
 vertical réel (étape 7), pas à deviner maintenant.
 
-Étape 7 — **en cours** (étape 6, déploiement, volontairement différée) :
-validé contre le cas fraudos réel (`the fraudos prototype repository`, cloné
+Étape 7 : validé contre le cas fraudos réel (`the fraudos prototype repository`, cloné
 en lecture seule, pas vendoré). **Correction au dossier section 3** :
 `fraudos-prototype` n'a en réalité aucune instrumentation ADOT/OTel — observabilité
 maison (`AgentSpan` → CloudWatch/DynamoDB) — et le score de fraude vient d'un
@@ -107,6 +106,26 @@ la main : `scripts/dev-clickhouse.sh up` → `cargo run -p kernel` → `cargo ru
 -p fraudos-replay -- <fixture>` → requêtes réelles contre `query-api`,
 arbre de trace et agrégats corrects. `otlp-receiver` génère maintenant aussi
 le client gRPC (`TraceServiceClient`), pas seulement le serveur.
+
+Étape 6 — **en cours** : squelette de déploiement, cloud cible volontairement
+**non tranché** (dossier section 5) — décision explicite avec l'utilisateur
+de tout construire soi-même par-dessus du hardware nu plutôt que des services
+managés spécifiques à un cloud (voir échange du 2026-08-14 sur GCP/Azure).
+`docker/kernel.Dockerfile` et `docker/query-api.Dockerfile` (build multi-stage
+`rust:1.97.1-slim-bookworm` → `debian:bookworm-slim`, aucun paquet système
+requis à la compilation — tout est en Rust pur) produisent les mêmes images
+quel que soit le cloud choisi plus tard ; seul le provisionnement de la VM en
+dépendra. `docker/docker-compose.stack.yml` (`scripts/dev-stack.sh`) assemble
+ClickHouse + `kernel` + `query-api` avec ces images — **vérifié réellement
+construit et lancé en conteneurs**, rejeu fraudos + requêtes `query-api`
+correctes de bout en bout (pas seulement `cargo run`). `.gitlab-ci.yml`
+(stages `check`/`test`/`build-images`) fait tourner `fmt`/`clippy`/`cargo
+test --workspace` + les tests `--ignored` contre un vrai service ClickHouse
+en CI, et pousse les images vers le Container Registry GitLab seulement sur
+`main` — écrit d'après la doc GitLab CI vérifiée (variables prédéfinies
+`CI_REGISTRY*`, pattern `docker:dind`), mais **pas encore vérifié sur un vrai
+runner** : rien n'a été poussé sur `origin` (accord requis avant tout push,
+voir mémoire git-workflow).
 
 Chaque étape doit être testable indépendamment et fermée par une fiche de
 contrat dans `docs/interfaces/` si elle touche une frontière externe. Utilise

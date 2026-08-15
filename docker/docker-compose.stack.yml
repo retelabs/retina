@@ -1,0 +1,54 @@
+# Squelette de déploiement (dossier étape 6) : assemble ClickHouse +
+# `kernel` (otlp-receiver + clickhouse-sink) + `query-api` avec les mêmes
+# images qui tourneraient sur la VM cible, quel que soit le cloud choisi
+# (dossier section 5, toujours ouvert). Build depuis la racine du repo :
+#   docker compose -f docker/docker-compose.stack.yml up --build
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    environment:
+      CLICKHOUSE_DB: observability
+      CLICKHOUSE_USER: dev
+      CLICKHOUSE_PASSWORD: dev
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - clickhouse-stack-data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  kernel:
+    build:
+      context: ..
+      dockerfile: docker/kernel.Dockerfile
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    environment:
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: dev
+      CLICKHOUSE_PASSWORD: dev
+      CLICKHOUSE_DATABASE: observability
+    ports:
+      - "4317:4317"
+
+  query-api:
+    build:
+      context: ..
+      dockerfile: docker/query-api.Dockerfile
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    environment:
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: dev
+      CLICKHOUSE_PASSWORD: dev
+      CLICKHOUSE_DATABASE: observability
+    ports:
+      - "8080:8080"
+
+volumes:
+  clickhouse-stack-data:

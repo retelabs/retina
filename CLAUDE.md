@@ -276,8 +276,41 @@ pas 2s) ; les tests d'intégration `plugin-sink`/`query-api` contre un vrai
 ClickHouse toujours au vert avec le nouveau chemin async ; bout en bout
 réel via `scripts/demo.sh` contre la pile Docker reconstruite.
 
-Reste à faire, pas encore commencé : stratégie de rétention/évolution de
-schéma ClickHouse.
+**Rétention/évolution de schéma ClickHouse — fait.** Durée tranchée avec
+l'utilisateur : 90 jours (assez pour investiguer un incident a posteriori
+sans accumuler indéfiniment). Syntaxe TTL ClickHouse vérifiée contre la doc
+réelle avant d'écrire la migration ; comportement de `max()` sur table vide
+(`0`, pas `NULL`) vérifié empiriquement contre un vrai serveur (la doc seule
+ne le précisait pas).
+
+Avant cette étape, une seule migration existait, appliquée à chaque
+démarrage via un `CREATE TABLE IF NOT EXISTS` — idempotent par chance, pas
+par conception, et dupliquée (`include_str!` recopié dans `crates/kernel` et
+3 suites de tests d'intégration). `crates/clickhouse-sink/src/migrate.rs`
+(`run_migrations`, exportée) résout les deux problèmes en même temps :
+table `schema_migrations` (version/nom/date), migrations numérotées
+appliquées dans l'ordre et enregistrées, un seul endroit qui connaît la
+liste. `migrations/0002_spans_retention_ttl.sql` (`ALTER TABLE spans MODIFY
+TTL start_time + INTERVAL 90 DAY DELETE`) est la première migration réelle
+au-delà de la création initiale — exactement ce que le mécanisme devait
+prouver. Détails complets dans `docs/interfaces/clickhouse-retention.md`.
+
+Hypothèse mono-instance assumée (dossier section 4, pas de HA au MVP) :
+deux processus qui appliqueraient la même migration en même temps ne sont
+pas gérés — il n'existe qu'un seul kernel aujourd'hui.
+
+Vérifié contre un vrai ClickHouse, pas seulement en lisant la doc : base
+entièrement fraîche → les deux migrations appliquées et enregistrées,
+`system.tables.engine_full` confirme le TTL sur `spans` ; et surtout le
+**scénario de mise à niveau réel** — `spans` recréée sans TTL et
+`schema_migrations` supprimée pour simuler un déploiement antérieur à cette
+fonctionnalité, puis `cargo run -p kernel` réellement lancé contre cette
+base : la migration 2 s'est appliquée automatiquement au démarrage sans
+intervention manuelle.
+
+Avec ceci, les quatre limites produit identifiées le 2026-08-15 sont
+comblées (authentification, activation des plugins par config, isolation de
+l'exécution des plugins, rétention/évolution de schéma).
 
 ## Hors périmètre volontaire du MVP (dossier section 4)
 

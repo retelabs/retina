@@ -31,15 +31,9 @@ fn test_client() -> Client {
 }
 
 async fn migrate(client: &Client) {
-    client
-        .query(include_str!(
-            "../../clickhouse-sink/migrations/0001_create_spans.sql"
-        ))
-        .execute()
-        .await
-        .expect(
-            "failed to apply migration — is ClickHouse running? (scripts/dev-clickhouse.sh up)",
-        );
+    clickhouse_sink::run_migrations(client).await.expect(
+        "failed to apply migrations — is ClickHouse running? (scripts/dev-clickhouse.sh up)",
+    );
 }
 
 fn sample_span(id_byte: u8) -> SpanContext {

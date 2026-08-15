@@ -10,7 +10,7 @@
 //! just against our own assumptions about the crate's API.
 
 use clickhouse::Client;
-use clickhouse_sink::{ClickHouseSink, SpanRow};
+use clickhouse_sink::{ClickHouseSink, SpanRow, run_migrations};
 use kernel_model::{
     ModelCallEvent, OperationName, ProviderName, SpanContext, SpanId, SpanStatus, TokenCount,
     TraceId,
@@ -40,13 +40,9 @@ fn test_client() -> Client {
 async fn insert_and_read_back_a_model_call_span() {
     let client = test_client();
 
-    client
-        .query(include_str!("../migrations/0001_create_spans.sql"))
-        .execute()
-        .await
-        .expect(
-            "failed to apply migration — is ClickHouse running? (scripts/dev-clickhouse.sh up)",
-        );
+    run_migrations(&client).await.expect(
+        "failed to apply migrations — is ClickHouse running? (scripts/dev-clickhouse.sh up)",
+    );
 
     let trace_id = TraceId::try_from(&[7u8; 16][..]).unwrap();
     let span_id = SpanId::try_from(&[9u8; 8][..]).unwrap();

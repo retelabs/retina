@@ -102,15 +102,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_password(clickhouse_password)
         .with_database(clickhouse_database);
 
-    // Applies the same migration clickhouse-sink's own tests apply — a
-    // freshly started kernel against an empty database should just work,
-    // not require a separate manual migration step for local/dev use.
-    client
-        .query(include_str!(
-            "../../clickhouse-sink/migrations/0001_create_spans.sql"
-        ))
-        .execute()
-        .await?;
+    // Applies every migration newer than what's recorded (docs/interfaces/clickhouse-retention.md)
+    // — a freshly started kernel against an empty database should just
+    // work, not require a separate manual migration step for local/dev use.
+    clickhouse_sink::run_migrations(&client).await?;
 
     let clickhouse_sink = ClickHouseSink::new(client, table);
     let sink = PluginSink::new(clickhouse_sink, plugins);

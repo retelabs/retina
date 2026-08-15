@@ -117,15 +117,9 @@ async fn seed(client: &Client, trace_id: TraceId) {
 /// parallel).
 async fn setup(id_byte: u8) -> (Router, String) {
     let client = test_client();
-    client
-        .query(include_str!(
-            "../../clickhouse-sink/migrations/0001_create_spans.sql"
-        ))
-        .execute()
-        .await
-        .expect(
-            "failed to apply migration — is ClickHouse running? (scripts/dev-clickhouse.sh up)",
-        );
+    clickhouse_sink::run_migrations(&client).await.expect(
+        "failed to apply migrations — is ClickHouse running? (scripts/dev-clickhouse.sh up)",
+    );
 
     let trace_id = TraceId::try_from(&[id_byte; 16][..]).unwrap();
     seed(&client, trace_id).await;

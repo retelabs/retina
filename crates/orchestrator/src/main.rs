@@ -1,155 +1,49 @@
 //! Control plane "maison" (dossier section 5 — décision cloud ouverte, mise
 //! de côté au profit d'un objectif d'apprentissage : coder un service
 //! managé en Rust, comprendre les concepts, avant de choisir un hébergeur).
-//! Remplace `scripts/dev-stack.sh` : déploie ClickHouse + `kernel` +
-//! `query-api`, dans cet ordre (`depends_on`), sur un réseau Docker partagé
-//! pour qu'ils se résolvent par nom comme sous `docker compose`.
-//!
-//! Pas encore un service HTTP — un binaire qui prouve, contre le vrai démon
-//! Docker local, que le cycle de vie complet des 3 services marche.
+//! Exposes `POST /deploy`, `GET /status`, `POST /teardown` over ClickHouse +
+//! `kernel` + `query-api` (`crates/orchestrator/src/topology.rs`), replacing
+//! `scripts/dev-stack.sh` with a real service rather than a script.
 //!
 //! Prérequis : les images `docker-kernel:latest`/`docker-query-api:latest`
 //! doivent déjà exister localement (`scripts/dev-stack.sh up` une fois, ou
 //! `docker compose -f docker/docker-compose.stack.yml build`) — ce control
 //! plane ne construit pas encore d'image lui-même
 //! (docs/interfaces/docker-engine-api.md).
+//!
+//! Pas d'authentification (docs.rs/interfaces/docker-engine-api.md,
+//! `src/api.rs`) — délibérément différé, compensé par un bind par défaut
+//! sur `127.0.0.1` plutôt que `0.0.0.0` (contrairement à `crates/kernel`/
+//! `crates/query-api`, qui écoutent sur toutes les interfaces).
 
-use std::time::Duration;
+use std::sync::Arc;
 
 use bollard::Docker;
-use orchestrator::docker_client::{
-    HealthCheckSpec, ImageSource, ManagedService, PortSpec, deploy_all, status, teardown_all,
-};
+use orchestrator::api::{AppState, build_app};
+use orchestrator::topology::{NETWORK, trellis_stack};
 
-const NETWORK: &str = "trellis-orchestrator-net";
-const CLICKHOUSE_NAME: &str = "trellis-orchestrator-clickhouse";
-
-fn clickhouse_service() -> ManagedService {
-    // Même image/variables d'env/healthcheck que docker/docker-compose.stack.yml
-    // — le control plane doit reproduire ce que compose fait, pas inventer
-    // sa propre définition du service.
-    ManagedService {
-        name: CLICKHOUSE_NAME.to_string(),
-        image: "clickhouse/clickhouse-server:latest".to_string(),
-        image_source: ImageSource::Registry,
-        env: vec![
-            "CLICKHOUSE_DB=observability".to_string(),
-            "CLICKHOUSE_USER=dev".to_string(),
-            "CLICKHOUSE_PASSWORD=dev".to_string(),
-            "CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1".to_string(),
-        ],
-        healthcheck: Some(HealthCheckSpec {
-            test: vec![
-                "CMD".to_string(),
-                "wget".to_string(),
-                "--spider".to_string(),
-                "-q".to_string(),
-                "http://localhost:8123/ping".to_string(),
-            ],
-            interval: Duration::from_secs(2),
-            timeout: Duration::from_secs(2),
-            retries: 30,
-        }),
-        ports: vec![],
-        depends_on: vec![],
-    }
-}
-
-/// Both `kernel` and `query-api` need to reach ClickHouse by its container
-/// name — resolvable because `deploy_all` puts every service on the same
-/// user-defined network (`NETWORK`), which gives Docker's embedded DNS
-/// resolution by container name; the default `bridge` network would not.
-fn clickhouse_url() -> String {
-    format!("http://{CLICKHOUSE_NAME}:8123")
-}
-
-fn kernel_service() -> ManagedService {
-    ManagedService {
-        name: "trellis-orchestrator-kernel".to_string(),
-        image: "docker-kernel:latest".to_string(),
-        image_source: ImageSource::Local,
-        env: vec![
-            format!("CLICKHOUSE_URL={}", clickhouse_url()),
-            "CLICKHOUSE_USER=dev".to_string(),
-            "CLICKHOUSE_PASSWORD=dev".to_string(),
-            "CLICKHOUSE_DATABASE=observability".to_string(),
-            // Dev-only fixed token, same posture as docker-compose.stack.yml
-            // (docs/interfaces/kernel-auth.md).
-            "KERNEL_API_KEY=dev-kernel-key".to_string(),
-        ],
-        healthcheck: None,
-        ports: vec![PortSpec {
-            container_port: 4317,
-            host_port: 4317,
-        }],
-        depends_on: vec![CLICKHOUSE_NAME.to_string()],
-    }
-}
-
-fn query_api_service() -> ManagedService {
-    ManagedService {
-        name: "trellis-orchestrator-query-api".to_string(),
-        image: "docker-query-api:latest".to_string(),
-        image_source: ImageSource::Local,
-        env: vec![
-            format!("CLICKHOUSE_URL={}", clickhouse_url()),
-            "CLICKHOUSE_USER=dev".to_string(),
-            "CLICKHOUSE_PASSWORD=dev".to_string(),
-            "CLICKHOUSE_DATABASE=observability".to_string(),
-            "QUERY_API_KEY=dev-query-key".to_string(),
-        ],
-        healthcheck: None,
-        ports: vec![PortSpec {
-            container_port: 8080,
-            host_port: 8080,
-        }],
-        depends_on: vec![CLICKHOUSE_NAME.to_string()],
-    }
+fn env_or(key: &str, default: &str) -> String {
+    std::env::var(key).unwrap_or_else(|_| default.to_string())
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let docker = Docker::connect_with_local_defaults()?;
-    let services = vec![clickhouse_service(), kernel_service(), query_api_service()];
+    let bind_addr = env_or("ORCHESTRATOR_BIND", "127.0.0.1:9000");
 
-    for service in &services {
-        println!(
-            "état avant déploiement — {}: {:?}",
-            service.name,
-            status(&docker, &service.name).await?
-        );
-    }
+    let state = AppState {
+        docker: Arc::new(docker),
+        network: NETWORK.to_string(),
+        services: Arc::new(trellis_stack()),
+    };
+    let app = build_app(state);
 
-    println!(
-        "\n→ deploy_all (clickhouse d'abord, puis kernel/query-api une fois clickhouse healthy)"
-    );
-    deploy_all(&docker, NETWORK, &services).await?;
-
-    for service in &services {
-        println!(
-            "état atteint — {}: {:?}",
-            service.name,
-            status(&docker, &service.name).await?
-        );
-    }
-
-    if std::env::args().any(|a| a == "--keep-running") {
-        println!(
-            "\n--keep-running : pile laissée en route (query-api sur localhost:8080, kernel sur localhost:4317)"
-        );
-        return Ok(());
-    }
-
-    println!("\n→ teardown_all");
-    teardown_all(&docker, &services).await?;
-
-    for service in &services {
-        println!(
-            "état après teardown — {}: {:?}",
-            service.name,
-            status(&docker, &service.name).await?
-        );
-    }
+    let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
+    eprintln!("orchestrator listening on {bind_addr}");
+    eprintln!("  POST /deploy    — deploy clickhouse, then kernel/query-api once it's healthy");
+    eprintln!("  GET  /status    — current status of all 3 services");
+    eprintln!("  POST /teardown  — stop and remove all 3");
+    axum::serve(listener, app).await?;
 
     Ok(())
 }

@@ -380,8 +380,30 @@ partagé et que `query-api` relit les mêmes données. Plus 4 tests unitaires
 contre un vrai démon, chacun relancé plusieurs fois pour confirmer que le
 fix de la race n'était pas un coup de chance.
 
-Pas encore fait : API HTTP (le binaire ne fait que prouver le client Docker
-pour l'instant), construction d'image via l'API Docker, et un deuxième
+**API HTTP — fait.** `crates/orchestrator/src/main.rs` est maintenant un
+vrai service (`axum::serve`, `POST /deploy`/`GET /status`/`POST /teardown`),
+même layering que `crates/query-api` (routes/DTOs séparés du client Docker)
+pour la cohérence du workspace. `deploy`/`teardown` restent idempotents à
+travers la couche HTTP — même garantie que `docker_client`, pas perdue en
+l'enveloppant. Mapping d'erreur distingué par code HTTP (400 dépendance
+invalide, 422 image locale manquante, 504 timeout de santé, 500 erreur
+Docker générique) plutôt que tout renvoyer en 500.
+
+**Pas d'authentification, délibérément** : outil d'apprentissage local,
+`ORCHESTRATOR_BIND` par défaut sur `127.0.0.1` (pas `0.0.0.0` comme
+kernel/query-api) — noté explicitement que s'il tourne un jour sur un
+réseau atteignable, il lui faut le même traitement que kernel/query-api
+d'abord, vu qu'il peut arrêter des conteneurs.
+
+Vérifié à deux niveaux : `tower::ServiceExt::oneshot` contre le vrai
+`Router` (cycle `/status` → `/deploy` → `/deploy` de nouveau (idempotence)
+→ `/teardown`, contre la vraie pile à 3 services) ; et manuellement,
+serveur réellement lancé, `curl` contre les 3 routes puis un vrai rejeu
+gRPC (`fraudos-replay`) et une vraie requête `query-api` confirmant que les
+conteneurs déployés par l'API HTTP fonctionnent pour de vrai, pas
+seulement `status: "Healthy"`.
+
+Pas encore fait : construction d'image via l'API Docker, et un deuxième
 chantier envisagé pour le même objectif d'apprentissage — une méthode de
 calcul de coût réel.
 

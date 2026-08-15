@@ -140,7 +140,7 @@ pub struct ManagedService {
     pub depends_on: Vec<String>,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum ServiceStatus {
     /// No container by this name exists yet.
     Absent,

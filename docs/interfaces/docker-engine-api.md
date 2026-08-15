@@ -121,16 +121,51 @@ est une boucle de réconciliation en miniature : observer l'état, comparer à
 l'état voulu, attendre, recommencer — le même principe qu'un vrai
 contrôleur Kubernetes/Nomad, réduit à sa version la plus simple.
 
-## Pas encore fait, explicitement pas dans ce V0
+## API HTTP (`crates/orchestrator/src/api.rs`)
 
-- **API HTTP** (`POST /deploy`, `GET /status`, `POST /teardown`) — le
-  binaire prouve juste le client Docker pour l'instant.
+`main.rs` est maintenant un vrai service (`axum::serve`), plus un binaire de
+preuve — même layering que `crates/query-api` (routes/DTOs séparés du
+client qui fait le travail réel), pour la cohérence du workspace, pas parce
+que ce crate en avait besoin isolément.
+
+| Route | Effet |
+|---|---|
+| `GET /status` | Statut des 3 services (`ServiceStatus`, sérialisé tel quel — un enum C-like devient une string JSON par défaut avec `serde`). |
+| `POST /deploy` | `deploy_all` puis renvoie le statut — **idempotent**, un appelant peut le rappeler après un timeout sans vérifier l'état avant. |
+| `POST /teardown` | `teardown_all` puis renvoie le statut — idempotent aussi. |
+
+Mapping d'erreur (`ApiError: From<OrchestratorError> + IntoResponse`) :
+`UnknownDependency`/`DependencyCycle` → 400 (la demande elle-même ne peut
+pas marcher), `MissingLocalImage` → 422 (comprise mais pas exécutable en
+l'état — il manque un `docker build` préalable), `HealthTimeout` → 504,
+`Docker(_)` → 500. Distinguer ces cas plutôt que tout renvoyer en 500 évite
+à l'appelant de deviner quoi vérifier.
+
+**Pas d'authentification**, contrairement à `crates/kernel`/`crates/query-api`
+(`docs/interfaces/kernel-auth.md`) — délibérément différé, pas oublié : outil
+d'apprentissage local, `ORCHESTRATOR_BIND` par défaut sur `127.0.0.1`
+(pas `0.0.0.0` comme kernel/query-api). Si ce service tourne un jour sur un
+réseau atteignable, il lui faut le même traitement d'abord — il peut arrêter
+des conteneurs, une surface plus sensible que kernel ou query-api, pas moins.
+
+Vérifié à deux niveaux : `tower::ServiceExt::oneshot` contre le vrai
+`Router` (`crates/orchestrator/tests/api_integration.rs`, `--ignored`) —
+cycle complet `/status` → `/deploy` → `/deploy` à nouveau (idempotence) →
+`/teardown`, contre la vraie pile à 3 services, pas une topologie jouet ;
+et manuellement, serveur réellement lancé (`cargo run -p orchestrator`),
+`curl` contre les 3 routes, puis un vrai rejeu gRPC (`fraudos-replay`) et
+une vraie requête `query-api` confirmant que les conteneurs déployés par
+l'API HTTP fonctionnent réellement, pas seulement `status: "Healthy"`.
+
+## Pas encore fait
+
 - **Construction d'image via l'API** (`/build`, contexte de build en tar
   streamé) — `kernel`/`query-api` doivent être construits par le chemin
   existant (`docker/docker-compose.stack.yml` ou `docker build` direct)
   avant que `deploy_all` puisse les déployer ; `ImageSource::Local` échoue
   avec une erreur explicite (`MissingLocalImage`) plutôt que de tenter un
   pull qui échouerait de façon confuse.
+- **Authentification** sur `crates/orchestrator` (voir plus haut).
 - **Modèle de coût** — deuxième chantier envisagé pour le même objectif
   d'apprentissage, pas commencé.
 

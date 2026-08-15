@@ -312,6 +312,48 @@ Avec ceci, les quatre limites produit identifiées le 2026-08-15 sont
 comblées (authentification, activation des plugins par config, isolation de
 l'exécution des plugins, rétention/évolution de schéma).
 
+## Exploration cloud/infra — objectif d'apprentissage, pas un choix de fournisseur (2026-08-15, en cours)
+
+Dossier section 5 laissait "GCP vs Azure" ouvert. Discussion avec
+l'utilisateur : ce qui compte vraiment n'est pas le logo du cloud mais
+acquérir, en codant en direct, les concepts et la méthode pour construire —
+et chiffrer — ses propres briques d'infrastructure plutôt que de consommer
+des services managés tout faits. Le choix du fournisseur reste ouvert,
+volontairement secondaire à cet objectif.
+
+`crates/orchestrator` — un control plane "maison" en Rust, contre l'API
+Engine de Docker directement (crate `bollard` 0.21.0), pas une enveloppe de
+`docker compose`. Contrat vérifié en lisant le vrai code source de
+`bollard`/`bollard-stubs` depuis le registre Cargo local (pas seulement
+docs.rs, qui n'a pas donné les noms de champs exacts) — documenté dans
+`docs/interfaces/docker-engine-api.md`. V0 volontairement réduit à un seul
+service (`ClickHouse`, le plus simple des trois du dossier étape 6 — pas de
+build d'image maison) : `ensure_running`/`status`/`wait_healthy`/`teardown`,
+tous **idempotents** (propriété centrale d'un vrai control plane — une
+boucle de réconciliation doit pouvoir reconverger sans se soucier de l'état
+de départ). `wait_healthy` est une boucle observer/comparer/attendre en
+miniature, le même principe qu'un contrôleur Kubernetes/Nomad réduit à
+l'essentiel.
+
+Trois trouvailles réelles en lisant le code source plutôt qu'en devinant :
+`create_image` (pull) retourne un `Stream` paresseux, pas un `Future` — rien
+ne se passe tant qu'il n'est pas consommé ; les types de bollard ont changé
+de nom entre versions (`ContainerCreateBody` pas `Config<String>`) ; et
+distinguer "conteneur jamais créé" de "existe mais arrêté" demande
+`list_containers(all: true)` filtré par nom, pas `inspect_container` seul.
+
+Vérifié contre le vrai démon Docker local : cycle de vie complet
+(`cargo run -p orchestrator`) et test d'intégration d'idempotence
+(`cargo test -p orchestrator -- --ignored`) — `ensure_running` rappelé sur
+un conteneur déjà sain ne casse rien, `teardown` rappelé sur un conteneur
+déjà absent non plus.
+
+Pas encore fait : API HTTP (le binaire ne fait que prouver le client Docker
+pour l'instant), `kernel`/`query-api` (dépendance d'ordre sur ClickHouse
+healthy, plus besoin de construire leurs images via l'API), publication de
+ports, et un deuxième chantier envisagé pour le même objectif d'apprentissage
+— une méthode de calcul de coût réel.
+
 ## Hors périmètre volontaire du MVP (dossier section 4)
 
 Multi-tenancy, haute disponibilité/multi-région, couverture exhaustive des

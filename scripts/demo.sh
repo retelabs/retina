@@ -15,6 +15,12 @@ cd "$ROOT_DIR"
 KEEP_RUNNING=false
 [[ "${1:-}" == "--keep-running" ]] && KEEP_RUNNING=true
 
+# Doit correspondre aux jetons dev fixés dans docker-compose.stack.yml
+# (docs/interfaces/kernel-auth.md).
+export KERNEL_API_KEY=dev-kernel-key
+QUERY_API_KEY=dev-query-key
+AUTH_HEADER="Authorization: Bearer $QUERY_API_KEY"
+
 section() { echo; echo "=== $1 ==="; }
 pretty_json() { python3 -m json.tool 2>/dev/null || cat; }
 
@@ -34,7 +40,7 @@ trap cleanup EXIT
 
 section "Attente que query-api réponde"
 for i in $(seq 1 30); do
-  curl -s -o /dev/null "http://localhost:8080/metrics/summary" && break
+  curl -s -o /dev/null -H "$AUTH_HEADER" "http://localhost:8080/metrics/summary" && break
   sleep 1
 done
 
@@ -46,12 +52,12 @@ echo "--- compliance_officer_dismissed.json (dossier classé, un outil en échec
 cargo run --quiet -p fraudos-replay -- crates/fraudos-replay/fixtures/compliance_officer_dismissed.json
 
 section "3/5 — GET /traces (traces récentes, dérivées à la volée depuis ClickHouse)"
-curl -s "http://localhost:8080/traces?limit=5" | pretty_json
+curl -s -H "$AUTH_HEADER" "http://localhost:8080/traces?limit=5" | pretty_json
 
 section "4/5 — GET /traces/{trace_id} et GET /metrics/summary"
-TRACE_ID=$(curl -s "http://localhost:8080/traces?limit=1" | python3 -c "import json,sys; print(json.load(sys.stdin)[0]['trace_id'])")
+TRACE_ID=$(curl -s -H "$AUTH_HEADER" "http://localhost:8080/traces?limit=1" | python3 -c "import json,sys; print(json.load(sys.stdin)[0]['trace_id'])")
 echo "--- arbre de la trace la plus récente ($TRACE_ID) ---"
-curl -s "http://localhost:8080/traces/$TRACE_ID" | pretty_json
+curl -s -H "$AUTH_HEADER" "http://localhost:8080/traces/$TRACE_ID" | pretty_json
 echo
 echo "--- métriques agrégées par kind ---"
-curl -s "http://localhost:8080/metrics/summary" | pretty_json
+curl -s -H "$AUTH_HEADER" "http://localhost:8080/metrics/summary" | pretty_json

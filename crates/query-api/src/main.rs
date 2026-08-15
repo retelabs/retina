@@ -12,6 +12,11 @@ async fn main() {
     let password = env_or("CLICKHOUSE_PASSWORD", "dev");
     let database = env_or("CLICKHOUSE_DATABASE", "observability");
     let bind_addr = env_or("QUERY_API_BIND", "0.0.0.0:8080");
+    // Fails closed (docs/interfaces/kernel-auth.md): no "auth disabled"
+    // fallback, an unset key must stop the process rather than start it
+    // unauthenticated.
+    let api_key = std::env::var("QUERY_API_KEY")
+        .expect("QUERY_API_KEY must be set — see docs/interfaces/kernel-auth.md");
 
     let client = Client::default()
         .with_url(url)
@@ -19,7 +24,7 @@ async fn main() {
         .with_password(password)
         .with_database(database);
 
-    let app = build_app(client);
+    let app = build_app(client, api_key);
     let listener = tokio::net::TcpListener::bind(&bind_addr)
         .await
         .expect("failed to bind QUERY_API_BIND");

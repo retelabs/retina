@@ -32,6 +32,9 @@ services:
       CLICKHOUSE_USER: dev
       CLICKHOUSE_PASSWORD: dev
       CLICKHOUSE_DATABASE: observability
+      # Dev-only fixed token (docs/interfaces/kernel-auth.md), same posture
+      # as CLICKHOUSE_PASSWORD above — not meant to survive past local/demo use.
+      KERNEL_API_KEY: dev-kernel-key
     ports:
       - "4317:4317"
 
@@ -47,6 +50,7 @@ services:
       CLICKHOUSE_USER: dev
       CLICKHOUSE_PASSWORD: dev
       CLICKHOUSE_DATABASE: observability
+      QUERY_API_KEY: dev-query-key
     ports:
       - "8080:8080"
 

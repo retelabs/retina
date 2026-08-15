@@ -172,6 +172,51 @@ Chaque étape doit être testable indépendamment et fermée par une fiche de
 contrat dans `docs/interfaces/` si elle touche une frontière externe. Utilise
 `/kernel-status` pour un état des lieux.
 
+## Après le MVP — combler les limites produit (2026-08-15, en cours)
+
+Post-étape 7, avec l'utilisateur : le kernel tourne et est validé contre un
+vrai vertical, mais plusieurs lacunes empêchent d'en faire un vrai produit
+(pas de multi-tenant exclu volontairement — voir section suivante — mais
+authentification, chargement dynamique des plugins, découplage de
+l'exécution des plugins du chemin critique, stratégie de rétention).
+Priorité choisie avec l'utilisateur : l'authentification d'abord (la seule
+qui expose vraiment le kernel dès qu'il sort de `localhost`).
+
+**Authentification — fait.** Contrat vérifié et documenté dans
+`docs/interfaces/kernel-auth.md` avant d'écrire le code (API
+`tonic::service::Interceptor`/`TraceServiceServer::with_interceptor`
+inspectée dans le code généré réel, pas depuis la doc seule ; API
+`axum::middleware::from_fn_with_state` vérifiée contre docs.rs pour la
+version exacte 0.8.9 ; convention de header `authorization: Bearer <token>`
+alignée sur `OTEL_EXPORTER_OTLP_HEADERS`, le mécanisme standard qu'un vrai
+SDK OTel utilise déjà sans code custom). Secret partagé statique par
+surface (pas de JWT/OAuth — proportionné à un kernel mono-tenant,
+dossier section 4) : `KERNEL_API_KEY` pour `otlp-receiver`/`crates/kernel`,
+`QUERY_API_KEY` pour `crates/query-api` — deux jetons distincts parce
+qu'écriture (ingestion) et lecture (query) ne sont pas le même niveau de
+confiance. Échec fermé : les deux binaires refusent de démarrer si la
+variable d'environnement correspondante est absente (vérifié en lançant
+réellement les deux binaires sans la variable — panic immédiat, pas un
+serveur qui tourne sans protection). Comparaison en temps constant pour
+éviter une fuite de timing sur le jeton. `fraudos-replay`/`oncology-replay`
+attachent désormais le header à chaque appel gRPC réel.
+
+Vérifié à trois niveaux : tests unitaires de l'intercepteur/du middleware
+(8 tests, y compris rejet sans header et avec mauvais jeton) ; tests
+d'intégration `query-api` contre un vrai ClickHouse via
+`tower::ServiceExt::oneshot`, incluant un nouveau test qui prouve le rejet
+401 (`cargo test -p query-api -- --ignored`) ; bout en bout réel via
+`scripts/demo.sh` contre la pile Docker (`scripts/dev-stack.sh up`, jetons
+dev fixes dans `docker-compose.stack.yml`, même posture que
+`CLICKHOUSE_PASSWORD: dev` déjà en place) — rejeu fraudos accepté par le
+kernel réel via gRPC authentifié, requêtes `query-api` authentifiées
+retournant les traces/métriques attendues.
+
+Reste à faire, pas encore commencé : chargement dynamique des plugins
+(actuellement codés en dur dans `crates/kernel/src/main.rs`), découpler
+`PluginSink` du chemin synchrone d'ingestion, stratégie de rétention/évolution
+de schéma ClickHouse.
+
 ## Hors périmètre volontaire du MVP (dossier section 4)
 
 Multi-tenancy, haute disponibilité/multi-région, couverture exhaustive des

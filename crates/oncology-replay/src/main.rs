@@ -2,7 +2,7 @@
 //! See docs/interfaces/oncology-governance.md.
 
 use oncology_replay::{OncologyRun, convert};
-use otlp_receiver::TraceServiceClient;
+use otlp_receiver::{TraceServiceClient, bearer_metadata_value};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -15,6 +15,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
     let kernel_addr =
         std::env::var("KERNEL_ADDR").unwrap_or_else(|_| "http://localhost:4317".to_string());
+    // Must match the running kernel's KERNEL_API_KEY (docs/interfaces/kernel-auth.md).
+    let api_key = std::env::var("KERNEL_API_KEY")
+        .map_err(|_| "KERNEL_API_KEY must be set — see docs/interfaces/kernel-auth.md")?;
 
     let raw = std::fs::read_to_string(&fixture_path)
         .map_err(|e| format!("reading {fixture_path}: {e}"))?;
@@ -45,6 +48,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             )
         })?;
 
+    let mut request = tonic::Request::new(request);
+    request
+        .metadata_mut()
+        .insert("authorization", bearer_metadata_value(&api_key)?);
     let response = client.export(request).await?.into_inner();
     match response.partial_success {
         Some(p) if p.rejected_spans > 0 => eprintln!(

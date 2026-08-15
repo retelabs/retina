@@ -8,9 +8,12 @@
   Point vérifié avant de coder : **axum 0.8 utilise `{param}` dans les routes,
   pas `:param`** — l'ancienne syntaxe *panique* au démarrage du routeur au
   lieu d'échouer silencieusement (changelog officiel, vérifié le 2026-08-14).
-- Date de vérification : 2026-08-14
+- Date de vérification : 2026-08-14 (mise à jour 2026-08-15 : authentification)
 - Portée : 2-3 endpoints minimaux (dossier section 2.2 étape 4), pas de
-  dashboard riche, pas d'authentification (MVP local).
+  dashboard riche.
+- **Authentification (ajoutée le 2026-08-15)** : les 3 endpoints exigent un
+  header `Authorization: Bearer <QUERY_API_KEY>`, sinon `401 Unauthorized`.
+  Contrat complet dans `docs/interfaces/kernel-auth.md`.
 
 ## Endpoints
 

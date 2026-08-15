@@ -16,7 +16,7 @@
 
 use clickhouse::Client;
 use clickhouse_sink::ClickHouseSink;
-use otlp_receiver::{Receiver, TraceServiceServer};
+use otlp_receiver::{ApiKeyInterceptor, Receiver, TraceServiceServer};
 use plugin_api::Plugin;
 use plugin_fraudos::FraudosPlugin;
 use plugin_medical::MedicalPlugin;
@@ -35,6 +35,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let clickhouse_database = env_or("CLICKHOUSE_DATABASE", "observability");
     let bind_addr: std::net::SocketAddr = env_or("KERNEL_BIND", "0.0.0.0:4317").parse()?;
     let table = env_or("SPANS_TABLE", "spans");
+    // Fails closed (docs/interfaces/kernel-auth.md): no "auth disabled"
+    // fallback, an unset key must stop the process rather than start it
+    // unauthenticated.
+    let api_key = std::env::var("KERNEL_API_KEY")
+        .expect("KERNEL_API_KEY must be set — see docs/interfaces/kernel-auth.md");
 
     let client = Client::default()
         .with_url(clickhouse_url)
@@ -58,8 +63,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let receiver = Receiver::new(sink);
 
     eprintln!("kernel (otlp-receiver + clickhouse-sink) listening on {bind_addr}");
+    let interceptor = ApiKeyInterceptor::new(api_key);
     Server::builder()
-        .add_service(TraceServiceServer::new(receiver))
+        .add_service(TraceServiceServer::with_interceptor(receiver, interceptor))
         .serve(bind_addr)
         .await?;
 

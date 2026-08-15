@@ -17,12 +17,22 @@ use kernel_model::{
 };
 use otlp_receiver::{ConvertedEvent, SpanSink};
 
+fn env_or(key: &str, default: &str) -> String {
+    std::env::var(key).unwrap_or_else(|_| default.to_string())
+}
+
+/// Reads connection details from the environment (falling back to the local
+/// `scripts/dev-clickhouse.sh` defaults) rather than hardcoding
+/// `localhost:8123` — GitLab CI runs this test inside a container where
+/// ClickHouse is reachable via its service alias, not `localhost` (found by
+/// reproducing the CI job locally after a hardcoded `localhost` passed
+/// every local run but failed the first real pipeline).
 fn test_client() -> Client {
     Client::default()
-        .with_url("http://localhost:8123")
-        .with_user("dev")
-        .with_password("dev")
-        .with_database("observability")
+        .with_url(env_or("CLICKHOUSE_URL", "http://localhost:8123"))
+        .with_user(env_or("CLICKHOUSE_USER", "dev"))
+        .with_password(env_or("CLICKHOUSE_PASSWORD", "dev"))
+        .with_database(env_or("CLICKHOUSE_DATABASE", "observability"))
 }
 
 #[tokio::test]

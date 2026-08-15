@@ -23,12 +23,19 @@ use query_api::build_app;
 use serde_json::Value;
 use tower::ServiceExt;
 
+fn env_or(key: &str, default: &str) -> String {
+    std::env::var(key).unwrap_or_else(|_| default.to_string())
+}
+
+/// See the identical comment in crates/clickhouse-sink/tests/integration.rs
+/// — env-configurable so this also works against a GitLab CI service
+/// (reachable by alias, not `localhost`), not just local Docker Compose.
 fn test_client() -> Client {
     Client::default()
-        .with_url("http://localhost:8123")
-        .with_user("dev")
-        .with_password("dev")
-        .with_database("observability")
+        .with_url(env_or("CLICKHOUSE_URL", "http://localhost:8123"))
+        .with_user(env_or("CLICKHOUSE_USER", "dev"))
+        .with_password(env_or("CLICKHOUSE_PASSWORD", "dev"))
+        .with_database(env_or("CLICKHOUSE_DATABASE", "observability"))
 }
 
 async fn body_json(response: axum::response::Response) -> Value {

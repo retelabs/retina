@@ -24,6 +24,11 @@ fmt:
   stage: check
   image: rust:1.97.1-slim-bookworm
   <<: *cargo-cache
+  # slim-bookworm ne fournit ni rustfmt ni clippy par défaut (contrairement
+  # à l'image rust: non-slim) — trouvé en reproduisant l'échec du premier
+  # run CI dans le même conteneur en local, pas deviné depuis la doc.
+  before_script:
+    - rustup component add rustfmt
   script:
     - cargo fmt --check
 
@@ -31,6 +36,8 @@ clippy:
   stage: check
   image: rust:1.97.1-slim-bookworm
   <<: *cargo-cache
+  before_script:
+    - rustup component add clippy
   script:
     - cargo clippy --workspace --all-targets -- -D warnings
 

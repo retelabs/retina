@@ -85,10 +85,31 @@ documenté dans `docs/interfaces/plugin-contract-v0.md`. `crates/plugin-example`
 est le "plugin factice" que le dossier demande d'écrire pour valider le
 contrat (4 tests). Ne dépend pas de `otlp-receiver`/`clickhouse-sink` — pas
 encore câblé dans le pipeline, et volontairement générique (pas une ébauche
-du plugin fintech). Deux questions restent ouvertes pour plus tard : la
-modalité de chargement (trait Rust vs WASM `wasmtime`, dossier section 5) et
-où insérer l'appel plugin dans le pipeline — les deux dépendent du premier
-vertical réel (étape 7), pas à deviner maintenant.
+du plugin fintech). Deux questions restaient ouvertes : la modalité de
+chargement (trait Rust vs WASM `wasmtime`, dossier section 5) et où insérer
+l'appel plugin dans le pipeline.
+
+Exploration WASM (dossier section 5) : `crates/plugin-wasm-wire` (DTO JSON
+partagés hôte/guest, `kernel-model` reste sans dépendance externe),
+`crates/plugin-wasm-example` (même logique que `plugin-example`, compilée en
+`wasm32-unknown-unknown` via `scripts/build-wasm-plugins.sh`), et
+`crates/plugin-wasm-host` (`WasmPlugin`, implémente `Plugin` en chargeant le
+`.wasm` via `wasmtime` 47, module "core" + ABI mémoire linéaire maison — pas
+le Component Model, voir `docs/interfaces/wasm-plugin-loading.md` pour le
+pourquoi). Décision retenue : module WASM "core", pas le Component Model
+(outillage `cargo-component`/`wasm-tools` absent de l'environnement, et
+sur-designer avant de savoir si WASM est retenu durablement serait
+contraire à la logique de l'étape 5). **Deux trouvailles réelles en cours de
+route** : `extern "C" fn(...) -> (i32, i32)` compile mais `rustc` avertit
+`improper_ctypes_definitions` (layout de tuple non garanti) — remplacé par un
+retour `i64` empaqueté, sans ambiguïté ; et `Plugin::name() -> &'static str`
+ne convient pas à un plugin chargé dynamiquement (le nom n'existe qu'à
+l'exécution) — relâché en `&str` (changement rétrocompatible, vérifié).
+Testé en chargeant le vrai `.wasm` compilé via `wasmtime` et en comparant
+bit à bit sa sortie à celle du plugin natif `ExamplePlugin` (4 tests
+`--ignored`, `cargo test -p plugin-wasm-host -- --ignored`) — pas juste "ça
+ne plante pas", une vraie preuve d'équivalence comportementale entre les deux
+modalités de chargement.
 
 Étape 7 : validé contre le cas fraudos réel (`the fraudos prototype repository`, cloné
 en lecture seule, pas vendoré). **Correction au dossier section 3** :

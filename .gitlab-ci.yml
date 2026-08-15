@@ -44,7 +44,8 @@ clippy:
 # Couvre à la fois les tests par défaut (cargo test --workspace) et les
 # tests d'intégration marqués #[ignore] qui ont besoin d'un vrai ClickHouse
 # (crates/clickhouse-sink, crates/query-api — chacun applique sa propre
-# migration au démarrage du test, pas d'étape d'init séparée ici).
+# migration au démarrage du test, pas d'étape d'init séparée ici) ou du
+# plugin WASM compilé (crates/plugin-wasm-host, docs/interfaces/wasm-plugin-loading.md).
 test:
   stage: test
   image: rust:1.97.1-slim-bookworm
@@ -59,7 +60,10 @@ test:
     CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
     CLICKHOUSE_URL: http://clickhouse:8123
     CLICKHOUSE_DATABASE: observability
+  before_script:
+    - rustup target add wasm32-unknown-unknown
   script:
+    - ./scripts/build-wasm-plugins.sh
     - cargo test --workspace
     - cargo test --workspace -- --ignored
 

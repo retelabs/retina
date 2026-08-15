@@ -38,7 +38,15 @@ pub struct PluginOutcome {
 pub trait Plugin: Send + Sync {
     /// Stable identifier for logging/attribution. Not necessarily the
     /// vertical's name — a vertical may ship more than one plugin.
-    fn name(&self) -> &'static str;
+    ///
+    /// Borrowed with `&self`'s lifetime, not `&'static str`: a compiled-in
+    /// plugin can always return a `'static` literal (which still satisfies
+    /// this signature), but a dynamically-loaded one
+    /// (`docs/interfaces/wasm-plugin-loading.md`) only knows its name once
+    /// loaded at runtime — from the file path, embedded metadata, etc. — and
+    /// can't manufacture a `'static` string for it. Found by actually
+    /// implementing the WASM loading path, not anticipated in the v0 draft.
+    fn name(&self) -> &str;
 
     fn inspect(&self, event: KernelEvent<'_>) -> PluginOutcome;
 }

@@ -242,9 +242,42 @@ ClickHouse) — nom invalide paniqué avant tout accès réseau, chaîne vide
 démarrée avec 0 plugin, non défini démarré avec tous les plugins, sous-
 ensemble valide démarré normalement.
 
-Reste à faire, pas encore commencé : découpler `PluginSink` du chemin
-synchrone d'ingestion, stratégie de rétention/évolution de schéma
-ClickHouse.
+**Découplage de l'exécution des plugins — fait.** Portée tranchée avec
+l'utilisateur : isoler panic + borner le temps d'exécution, sans détacher
+l'écriture elle-même du chemin synchrone (la garantie "une réponse de
+succès OTLP veut dire que c'est en base" ne change pas — la détacher
+vraiment aurait été un chantier séparé et plus lourd, avec sa propre
+question ouverte : que faire des spans en file si le worker tombe avant
+d'écrire, pas de queue durable aujourd'hui).
+
+Le vrai bug corrigé : avant, un plugin qui panique faisait perdre tout le
+batch — le panic remontait à travers `accept_batch` *avant* que
+`inner.accept_batch` (l'écriture ClickHouse) ne soit jamais appelé, pas
+seulement la contribution de ce plugin. `crates/plugin-sink/src/lib.rs`
+exécute maintenant chaque plugin via `tokio::task::spawn_blocking` sous un
+timeout (`PLUGIN_TIMEOUT`, 100ms — généreux pour un plugin synchrone sans
+I/O comme le contrat l'exige aujourd'hui, docs/interfaces/plugin-contract-v0.md) :
+`spawn_blocking` isole le panic à la frontière de la tâche (tokio le
+transforme en `JoinError`, pas un unwind qui remonte jusqu'ici) ; le
+timeout borne le temps qu'un plugin peut retenir un batch (le thread
+natif ne peut pas être tué de force, il continue en arrière-plan et son
+résultat est simplement jeté). Les deux cas dégradent en
+`plugin.warning` sur l'événement concerné, pas en perte du batch.
+`Vec<Box<dyn Plugin>>` devenu `Vec<Arc<dyn Plugin>>` en interne (clonable
+dans la tâche bloquante, `Plugin: Send + Sync` déjà garanti par le contrat) ;
+`ConvertedEvent` a gagné `Clone` (nécessaire pour donner à la tâche bloquante
+sa propre copie `'static`, l'emprunt `KernelEvent<'a>` habituel ne survit
+pas à la frontière de tâche).
+
+Vérifié : 4 tests unitaires dont un plugin qui panique volontairement
+(preuve que le reste du batch et les autres plugins survivent) et un
+plugin qui dort 2s (preuve que `accept_batch` revient en moins de 500ms,
+pas 2s) ; les tests d'intégration `plugin-sink`/`query-api` contre un vrai
+ClickHouse toujours au vert avec le nouveau chemin async ; bout en bout
+réel via `scripts/demo.sh` contre la pile Docker reconstruite.
+
+Reste à faire, pas encore commencé : stratégie de rétention/évolution de
+schéma ClickHouse.
 
 ## Hors périmètre volontaire du MVP (dossier section 4)
 

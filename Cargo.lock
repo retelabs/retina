@@ -1287,9 +1287,13 @@ dependencies = [
 name = "plugin-sink"
 version = "0.1.0"
 dependencies = [
+ "clickhouse",
+ "clickhouse-sink",
  "kernel-model",
  "otlp-receiver",
  "plugin-api",
+ "plugin-fraudos",
+ "plugin-medical",
  "tokio",
 ]
 

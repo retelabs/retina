@@ -9,4 +9,8 @@ otlp-receiver = { version = "0.1.0", path = "../otlp-receiver" }
 plugin-api = { version = "0.1.0", path = "../plugin-api" }
 
 [dev-dependencies]
+clickhouse = "0.15.1"
+clickhouse-sink = { path = "../clickhouse-sink" }
+plugin-fraudos = { path = "../plugin-fraudos" }
+plugin-medical = { path = "../plugin-medical" }
 tokio = { version = "1.53.1", features = ["macros", "rt"] }

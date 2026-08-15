@@ -135,6 +135,16 @@ serveur réel avant utilisation). Vérifié de bout en bout : kernel réel +
 rejeu fraudos/oncologie + les avertissements attendus retrouvés en base ET
 dans les métriques agrégées — pas seulement testé en isolation.
 
+**Consolidé le 2026-08-15** : `crates/plugin-sink/tests/integration.rs`
+(`--ignored`, contre `scripts/dev-clickhouse.sh up`) teste maintenant la
+combinaison exacte que `crates/kernel` fait tourner en pratique —
+`PluginSink` enveloppant un vrai `ClickHouseSink`, pas `InMemorySink` — avec
+`FraudosPlugin` et `MedicalPlugin` réels (pas des plugins jouets). Prouve
+aussi l'absence de faux positif inter-vertical sur des données réellement
+persistées : un événement fraudos ne déclenche pas `MedicalPlugin` et
+inversement, même quand les deux plugins tournent ensemble sur chaque
+événement.
+
 ## Incertitudes / décisions à prendre plus tard, pas maintenant
 
 - Chargement WASM (`wasmtime`) — dossier section 5, toujours ouvert

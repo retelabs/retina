@@ -85,10 +85,51 @@ documenté dans `docs/interfaces/plugin-contract-v0.md`. `crates/plugin-example`
 est le "plugin factice" que le dossier demande d'écrire pour valider le
 contrat (4 tests). Ne dépend pas de `otlp-receiver`/`clickhouse-sink` — pas
 encore câblé dans le pipeline, et volontairement générique (pas une ébauche
-du plugin fintech). Deux questions restent ouvertes pour plus tard : la
-modalité de chargement (trait Rust vs WASM `wasmtime`, dossier section 5) et
-où insérer l'appel plugin dans le pipeline — les deux dépendent du premier
-vertical réel (étape 7), pas à deviner maintenant.
+du plugin fintech). Deux questions restaient ouvertes : la modalité de
+chargement (trait Rust vs WASM `wasmtime`, dossier section 5) et où insérer
+l'appel plugin dans le pipeline.
+
+Exploration WASM (dossier section 5) : `crates/plugin-wasm-wire` (DTO JSON
+partagés hôte/guest, `kernel-model` reste sans dépendance externe),
+`crates/plugin-wasm-example` (même logique que `plugin-example`, compilée en
+`wasm32-unknown-unknown` via `scripts/build-wasm-plugins.sh`), et
+`crates/plugin-wasm-host` (`WasmPlugin`, implémente `Plugin` en chargeant le
+`.wasm` via `wasmtime` 47, module "core" + ABI mémoire linéaire maison — pas
+le Component Model, voir `docs/interfaces/wasm-plugin-loading.md` pour le
+pourquoi). Décision retenue : module WASM "core", pas le Component Model
+(outillage `cargo-component`/`wasm-tools` absent de l'environnement, et
+sur-designer avant de savoir si WASM est retenu durablement serait
+contraire à la logique de l'étape 5). **Deux trouvailles réelles en cours de
+route** : `extern "C" fn(...) -> (i32, i32)` compile mais `rustc` avertit
+`improper_ctypes_definitions` (layout de tuple non garanti) — remplacé par un
+retour `i64` empaqueté, sans ambiguïté ; et `Plugin::name() -> &'static str`
+ne convient pas à un plugin chargé dynamiquement (le nom n'existe qu'à
+l'exécution) — relâché en `&str` (changement rétrocompatible, vérifié).
+Testé en chargeant le vrai `.wasm` compilé via `wasmtime` et en comparant
+bit à bit sa sortie à celle du plugin natif `ExamplePlugin` (4 tests
+`--ignored`, `cargo test -p plugin-wasm-host -- --ignored`) — pas juste "ça
+ne plante pas", une vraie preuve d'équivalence comportementale entre les deux
+modalités de chargement.
+
+Deuxième vertical réel + câblage du plugin dans le pipeline (2026-08-15) :
+`crates/plugin-medical` interprète les invariants de gouvernance
+**réellement lus** dans `the oncology pipeline repository` (oncologie,
+cloné en lecture seule) — gate de conformité HIPAA/GDPR déterministe
+(Presidio/NER) et gate HITL (`interrupt_before`), tous deux cités mot pour
+mot depuis le `CLAUDE.md` du repo source. Trouvaille notable : une deuxième
+implémentation du même vertical (`client-project`) fait juger la conformité
+RGPD **par le LLM lui-même** (texte libre, pas de sortie structurée) —
+divergence réelle entre deux systèmes de prod, pas supposée. Détails et
+mapping dans `docs/interfaces/oncology-governance.md`, `crates/oncology-replay`
+(3 fixtures). **`crates/plugin-sink`** (`PluginSink<S: SpanSink>`) résout la
+question laissée ouverte depuis l'étape 5 ("où insérer l'appel plugin dans
+le pipeline") : décorateur autour de n'importe quel `SpanSink`, câblé pour de
+vrai dans `crates/kernel` (enveloppe `ClickHouseSink`, avec `FraudosPlugin`
+et `MedicalPlugin`) — première fois qu'un plugin tourne dans l'ingestion
+réelle, pas seulement en test isolé. `query-api::/metrics/summary` expose
+`spans_with_warnings`. Vérifié de bout en bout : kernel réel + rejeu
+fraudos/oncologie + avertissements attendus retrouvés en base ET dans les
+métriques.
 
 Étape 7 : validé contre le cas fraudos réel (`the fraudos prototype repository`, cloné
 en lecture seule, pas vendoré). **Correction au dossier section 3** :
@@ -130,6 +171,146 @@ voir mémoire git-workflow).
 Chaque étape doit être testable indépendamment et fermée par une fiche de
 contrat dans `docs/interfaces/` si elle touche une frontière externe. Utilise
 `/kernel-status` pour un état des lieux.
+
+## Après le MVP — combler les limites produit (2026-08-15, en cours)
+
+Post-étape 7, avec l'utilisateur : le kernel tourne et est validé contre un
+vrai vertical, mais plusieurs lacunes empêchent d'en faire un vrai produit
+(pas de multi-tenant exclu volontairement — voir section suivante — mais
+authentification, chargement dynamique des plugins, découplage de
+l'exécution des plugins du chemin critique, stratégie de rétention).
+Priorité choisie avec l'utilisateur : l'authentification d'abord (la seule
+qui expose vraiment le kernel dès qu'il sort de `localhost`).
+
+**Authentification — fait.** Contrat vérifié et documenté dans
+`docs/interfaces/kernel-auth.md` avant d'écrire le code (API
+`tonic::service::Interceptor`/`TraceServiceServer::with_interceptor`
+inspectée dans le code généré réel, pas depuis la doc seule ; API
+`axum::middleware::from_fn_with_state` vérifiée contre docs.rs pour la
+version exacte 0.8.9 ; convention de header `authorization: Bearer <token>`
+alignée sur `OTEL_EXPORTER_OTLP_HEADERS`, le mécanisme standard qu'un vrai
+SDK OTel utilise déjà sans code custom). Secret partagé statique par
+surface (pas de JWT/OAuth — proportionné à un kernel mono-tenant,
+dossier section 4) : `KERNEL_API_KEY` pour `otlp-receiver`/`crates/kernel`,
+`QUERY_API_KEY` pour `crates/query-api` — deux jetons distincts parce
+qu'écriture (ingestion) et lecture (query) ne sont pas le même niveau de
+confiance. Échec fermé : les deux binaires refusent de démarrer si la
+variable d'environnement correspondante est absente (vérifié en lançant
+réellement les deux binaires sans la variable — panic immédiat, pas un
+serveur qui tourne sans protection). Comparaison en temps constant pour
+éviter une fuite de timing sur le jeton. `fraudos-replay`/`oncology-replay`
+attachent désormais le header à chaque appel gRPC réel.
+
+Vérifié à trois niveaux : tests unitaires de l'intercepteur/du middleware
+(8 tests, y compris rejet sans header et avec mauvais jeton) ; tests
+d'intégration `query-api` contre un vrai ClickHouse via
+`tower::ServiceExt::oneshot`, incluant un nouveau test qui prouve le rejet
+401 (`cargo test -p query-api -- --ignored`) ; bout en bout réel via
+`scripts/demo.sh` contre la pile Docker (`scripts/dev-stack.sh up`, jetons
+dev fixes dans `docker-compose.stack.yml`, même posture que
+`CLICKHOUSE_PASSWORD: dev` déjà en place) — rejeu fraudos accepté par le
+kernel réel via gRPC authentifié, requêtes `query-api` authentifiées
+retournant les traces/métriques attendues.
+
+**Activation des plugins par config — fait.** Portée délibérément réduite,
+tranchée avec l'utilisateur : activer/désactiver par configuration les
+plugins natifs déjà compilés (`FraudosPlugin`, `MedicalPlugin`), pas un
+vrai chargement dynamique de code arbitraire — ça, c'est la question WASM
+(`crates/plugin-wasm-host`, déjà construite et vérifiée équivalente au
+plugin natif mais toujours pas branchée dans le pipeline réel), qui reste
+ouverte et volontairement pas attaquée ici parce qu'elle soulève une
+question non tranchée en plus (gestion d'un plugin WASM tiers qui panique/
+boucle, voir `docs/interfaces/plugin-contract-v0.md`).
+
+`ENABLED_PLUGINS` (`crates/kernel/src/main.rs`, fonction pure
+`select_enabled` testée séparément de la lecture d'env) : liste de noms
+séparés par des virgules parmi les noms réels retournés par
+`Plugin::name()` (`fraudos-plugin`, `medical-plugin`). Non défini = tous les
+plugins tournent (comportement identique à avant, aucune config nouvelle
+requise pour `scripts/demo.sh` ou un déploiement existant) ; chaîne vide
+explicite = aucun plugin ; un nom inconnu fait paniquer le démarrage plutôt
+que d'être ignoré silencieusement (une faute de frappe qui désactiverait un
+plugin sans avertissement serait pire qu'un crash au démarrage). Résolu
+avant toute connexion ClickHouse, au même endroit que la validation de
+`KERNEL_API_KEY` — une erreur de config doit échouer immédiatement, pas
+après un aller-retour réseau.
+
+Vérifié : 5 tests unitaires sur `select_enabled` (non défini, chaîne vide,
+sous-ensemble valide, espaces tolérés, nom inconnu → panic) ; et les 4
+scénarios lancés pour de vrai (`cargo run -p kernel` contre un vrai
+ClickHouse) — nom invalide paniqué avant tout accès réseau, chaîne vide
+démarrée avec 0 plugin, non défini démarré avec tous les plugins, sous-
+ensemble valide démarré normalement.
+
+**Découplage de l'exécution des plugins — fait.** Portée tranchée avec
+l'utilisateur : isoler panic + borner le temps d'exécution, sans détacher
+l'écriture elle-même du chemin synchrone (la garantie "une réponse de
+succès OTLP veut dire que c'est en base" ne change pas — la détacher
+vraiment aurait été un chantier séparé et plus lourd, avec sa propre
+question ouverte : que faire des spans en file si le worker tombe avant
+d'écrire, pas de queue durable aujourd'hui).
+
+Le vrai bug corrigé : avant, un plugin qui panique faisait perdre tout le
+batch — le panic remontait à travers `accept_batch` *avant* que
+`inner.accept_batch` (l'écriture ClickHouse) ne soit jamais appelé, pas
+seulement la contribution de ce plugin. `crates/plugin-sink/src/lib.rs`
+exécute maintenant chaque plugin via `tokio::task::spawn_blocking` sous un
+timeout (`PLUGIN_TIMEOUT`, 100ms — généreux pour un plugin synchrone sans
+I/O comme le contrat l'exige aujourd'hui, docs/interfaces/plugin-contract-v0.md) :
+`spawn_blocking` isole le panic à la frontière de la tâche (tokio le
+transforme en `JoinError`, pas un unwind qui remonte jusqu'ici) ; le
+timeout borne le temps qu'un plugin peut retenir un batch (le thread
+natif ne peut pas être tué de force, il continue en arrière-plan et son
+résultat est simplement jeté). Les deux cas dégradent en
+`plugin.warning` sur l'événement concerné, pas en perte du batch.
+`Vec<Box<dyn Plugin>>` devenu `Vec<Arc<dyn Plugin>>` en interne (clonable
+dans la tâche bloquante, `Plugin: Send + Sync` déjà garanti par le contrat) ;
+`ConvertedEvent` a gagné `Clone` (nécessaire pour donner à la tâche bloquante
+sa propre copie `'static`, l'emprunt `KernelEvent<'a>` habituel ne survit
+pas à la frontière de tâche).
+
+Vérifié : 4 tests unitaires dont un plugin qui panique volontairement
+(preuve que le reste du batch et les autres plugins survivent) et un
+plugin qui dort 2s (preuve que `accept_batch` revient en moins de 500ms,
+pas 2s) ; les tests d'intégration `plugin-sink`/`query-api` contre un vrai
+ClickHouse toujours au vert avec le nouveau chemin async ; bout en bout
+réel via `scripts/demo.sh` contre la pile Docker reconstruite.
+
+**Rétention/évolution de schéma ClickHouse — fait.** Durée tranchée avec
+l'utilisateur : 90 jours (assez pour investiguer un incident a posteriori
+sans accumuler indéfiniment). Syntaxe TTL ClickHouse vérifiée contre la doc
+réelle avant d'écrire la migration ; comportement de `max()` sur table vide
+(`0`, pas `NULL`) vérifié empiriquement contre un vrai serveur (la doc seule
+ne le précisait pas).
+
+Avant cette étape, une seule migration existait, appliquée à chaque
+démarrage via un `CREATE TABLE IF NOT EXISTS` — idempotent par chance, pas
+par conception, et dupliquée (`include_str!` recopié dans `crates/kernel` et
+3 suites de tests d'intégration). `crates/clickhouse-sink/src/migrate.rs`
+(`run_migrations`, exportée) résout les deux problèmes en même temps :
+table `schema_migrations` (version/nom/date), migrations numérotées
+appliquées dans l'ordre et enregistrées, un seul endroit qui connaît la
+liste. `migrations/0002_spans_retention_ttl.sql` (`ALTER TABLE spans MODIFY
+TTL start_time + INTERVAL 90 DAY DELETE`) est la première migration réelle
+au-delà de la création initiale — exactement ce que le mécanisme devait
+prouver. Détails complets dans `docs/interfaces/clickhouse-retention.md`.
+
+Hypothèse mono-instance assumée (dossier section 4, pas de HA au MVP) :
+deux processus qui appliqueraient la même migration en même temps ne sont
+pas gérés — il n'existe qu'un seul kernel aujourd'hui.
+
+Vérifié contre un vrai ClickHouse, pas seulement en lisant la doc : base
+entièrement fraîche → les deux migrations appliquées et enregistrées,
+`system.tables.engine_full` confirme le TTL sur `spans` ; et surtout le
+**scénario de mise à niveau réel** — `spans` recréée sans TTL et
+`schema_migrations` supprimée pour simuler un déploiement antérieur à cette
+fonctionnalité, puis `cargo run -p kernel` réellement lancé contre cette
+base : la migration 2 s'est appliquée automatiquement au démarrage sans
+intervention manuelle.
+
+Avec ceci, les quatre limites produit identifiées le 2026-08-15 sont
+comblées (authentification, activation des plugins par config, isolation de
+l'exécution des plugins, rétention/évolution de schéma).
 
 ## Hors périmètre volontaire du MVP (dossier section 4)
 

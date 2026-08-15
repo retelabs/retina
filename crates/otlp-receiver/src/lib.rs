@@ -3,11 +3,13 @@
 //! seam, not decided here. Contracts this crate implements are documented in
 //! docs/interfaces/otlp-ingestion.md and docs/interfaces/semconv-genai.md.
 
+pub mod auth;
 pub mod convert;
 pub mod proto;
 pub mod service;
 pub mod sink;
 
+pub use auth::{ApiKeyInterceptor, bearer_metadata_value};
 pub use convert::{ConvertError, ConvertedEvent, convert_span};
 pub use proto::opentelemetry::proto::collector::trace::v1::trace_service_client::TraceServiceClient;
 pub use proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceServiceServer;

@@ -13,6 +13,11 @@
 - Scope de ce contrat : uniquement le signal **traces** (dossier section 2.1 : les 3
   événements MVP sont tous des spans, voir `docs/interfaces/semconv-genai.md`) — logs
   et métriques OTLP hors périmètre.
+- **Authentification (ajoutée le 2026-08-15)** : `TraceService.Export` exige
+  un header de métadonnées gRPC `authorization: Bearer <KERNEL_API_KEY>`,
+  sinon `UNAUTHENTICATED`. Convention alignée sur
+  `OTEL_EXPORTER_OTLP_HEADERS` d'un vrai SDK OTel — contrat complet dans
+  `docs/interfaces/kernel-auth.md`.
 
 ## Service gRPC
 

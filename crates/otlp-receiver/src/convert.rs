@@ -17,7 +17,7 @@ use crate::proto::opentelemetry::proto::common::v1::{
 use crate::proto::opentelemetry::proto::trace::v1::span::SpanKind;
 use crate::proto::opentelemetry::proto::trace::v1::{Span as ProtoSpan, Status as ProtoStatus};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ConvertedEvent {
     ModelCall(ModelCallEvent),
     ToolCall(ToolCallEvent),

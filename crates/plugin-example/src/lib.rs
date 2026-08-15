@@ -37,17 +37,17 @@ impl Plugin for ExamplePlugin {
 
 fn total_tokens_outcome(input: Option<TokenCount>, output: Option<TokenCount>) -> PluginOutcome {
     let mut outcome = PluginOutcome::default();
-    if let (Some(input), Some(output)) = (input, output) {
-        // Same reflex as everywhere else in this kernel: no bare `as i64` on
-        // a value that came from outside this function's control, even
-        // though token counts overflowing i64 when summed is not a
-        // realistic scenario in practice.
-        if let Ok(total) = i64::try_from(input.get() + output.get()) {
-            outcome.attributes.push((
-                "example.total_tokens".to_string(),
-                AttributeValue::Int(total),
-            ));
-        }
+    // Same reflex as everywhere else in this kernel: no bare `as i64` on a
+    // value that came from outside this function's control, even though
+    // token counts overflowing i64 when summed is not a realistic scenario
+    // in practice.
+    if let (Some(input), Some(output)) = (input, output)
+        && let Ok(total) = i64::try_from(input.get() + output.get())
+    {
+        outcome.attributes.push((
+            "example.total_tokens".to_string(),
+            AttributeValue::Int(total),
+        ));
     }
     outcome
 }

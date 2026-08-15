@@ -3,6 +3,7 @@
 //! documented in docs/interfaces/query-api.md.
 
 pub mod app;
+pub mod auth;
 pub mod dto;
 pub mod queries;
 pub mod routes;

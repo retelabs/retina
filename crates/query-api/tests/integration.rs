@@ -10,7 +10,7 @@
 
 use axum::Router;
 use axum::body::Body;
-use axum::http::{Request, StatusCode};
+use axum::http::{Request, StatusCode, header};
 use clickhouse::Client;
 use clickhouse_sink::ClickHouseSink;
 use http_body_util::BodyExt;
@@ -23,8 +23,18 @@ use query_api::build_app;
 use serde_json::Value;
 use tower::ServiceExt;
 
+const TEST_API_KEY: &str = "test-key";
+
 fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
+}
+
+fn authed_request(uri: impl AsRef<str>) -> Request<Body> {
+    Request::builder()
+        .uri(uri.as_ref())
+        .header(header::AUTHORIZATION, format!("Bearer {TEST_API_KEY}"))
+        .body(Body::empty())
+        .unwrap()
 }
 
 /// See the identical comment in crates/clickhouse-sink/tests/integration.rs
@@ -107,20 +117,17 @@ async fn seed(client: &Client, trace_id: TraceId) {
 /// parallel).
 async fn setup(id_byte: u8) -> (Router, String) {
     let client = test_client();
-    client
-        .query(include_str!(
-            "../../clickhouse-sink/migrations/0001_create_spans.sql"
-        ))
-        .execute()
-        .await
-        .expect(
-            "failed to apply migration — is ClickHouse running? (scripts/dev-clickhouse.sh up)",
-        );
+    clickhouse_sink::run_migrations(&client).await.expect(
+        "failed to apply migrations — is ClickHouse running? (scripts/dev-clickhouse.sh up)",
+    );
 
     let trace_id = TraceId::try_from(&[id_byte; 16][..]).unwrap();
     seed(&client, trace_id).await;
 
-    (build_app(client), hex::encode(trace_id.as_bytes()))
+    (
+        build_app(client, TEST_API_KEY.to_string()),
+        hex::encode(trace_id.as_bytes()),
+    )
 }
 
 #[tokio::test]
@@ -129,12 +136,7 @@ async fn list_traces_includes_the_seeded_trace() {
     let (app, trace_id_hex) = setup(1).await;
 
     let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/traces?limit=10")
-                .body(Body::empty())
-                .unwrap(),
-        )
+        .oneshot(authed_request("/traces?limit=10"))
         .await
         .unwrap();
 
@@ -153,12 +155,7 @@ async fn get_trace_returns_both_spans_ordered_by_start_time() {
     let (app, trace_id_hex) = setup(2).await;
 
     let response = app
-        .oneshot(
-            Request::builder()
-                .uri(format!("/traces/{trace_id_hex}"))
-                .body(Body::empty())
-                .unwrap(),
-        )
+        .oneshot(authed_request(format!("/traces/{trace_id_hex}")))
         .await
         .unwrap();
 
@@ -178,12 +175,7 @@ async fn get_trace_rejects_malformed_trace_id() {
     let (app, _) = setup(3).await;
 
     let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/traces/not-hex")
-                .body(Body::empty())
-                .unwrap(),
-        )
+        .oneshot(authed_request("/traces/not-hex"))
         .await
         .unwrap();
 
@@ -197,12 +189,7 @@ async fn get_trace_returns_404_for_unknown_but_well_formed_trace_id() {
     let unknown = hex::encode([99u8; 16]);
 
     let response = app
-        .oneshot(
-            Request::builder()
-                .uri(format!("/traces/{unknown}"))
-                .body(Body::empty())
-                .unwrap(),
-        )
+        .oneshot(authed_request(format!("/traces/{unknown}")))
         .await
         .unwrap();
 
@@ -215,12 +202,7 @@ async fn metrics_summary_counts_by_kind() {
     let (app, _) = setup(5).await;
 
     let response = app
-        .oneshot(
-            Request::builder()
-                .uri("/metrics/summary")
-                .body(Body::empty())
-                .unwrap(),
-        )
+        .oneshot(authed_request("/metrics/summary"))
         .await
         .unwrap();
 
@@ -236,4 +218,25 @@ async fn metrics_summary_counts_by_kind() {
         .find(|k| k["kind"] == "model_call")
         .expect("expected a model_call row");
     assert!(model_call["total_input_tokens"].as_u64().unwrap() >= 10);
+}
+
+#[tokio::test]
+#[ignore = "requires `scripts/dev-clickhouse.sh up`"]
+async fn requests_without_a_valid_bearer_token_are_rejected() {
+    let (app, _) = setup(6).await;
+
+    let missing_header = Request::builder()
+        .uri("/metrics/summary")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.clone().oneshot(missing_header).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+    let wrong_token = Request::builder()
+        .uri("/metrics/summary")
+        .header(header::AUTHORIZATION, "Bearer not-the-real-key")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.oneshot(wrong_token).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }

@@ -87,6 +87,14 @@ pub async fn metrics_summary(client: &Client) -> clickhouse::error::Result<Metri
         .fetch_all()
         .await?;
 
+    // `mapContains` verified against a real local ClickHouse before use
+    // (docs/interfaces/oncology-governance.md) — spans a plugin flagged via
+    // crates/plugin-sink carry a `plugin.warning` entry in extra_attributes.
+    let spans_with_warnings: u64 = client
+        .query("SELECT countIf(mapContains(extra_attributes, 'plugin.warning')) FROM spans")
+        .fetch_one()
+        .await?;
+
     Ok(MetricsSummaryDto {
         by_kind: rows
             .into_iter()
@@ -97,5 +105,6 @@ pub async fn metrics_summary(client: &Client) -> clickhouse::error::Result<Metri
                 total_output_tokens: r.total_output_tokens.unwrap_or(0),
             })
             .collect(),
+        spans_with_warnings,
     })
 }

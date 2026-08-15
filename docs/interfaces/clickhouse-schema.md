@@ -94,6 +94,10 @@ ORDER BY (trace_id, start_time, span_id)
 - `PARTITION BY toYYYYMMDD(start_time)` : coûte rien à poser maintenant même si
   "pas de rétention fine au MVP" (dossier section 4) — évite une migration de
   schéma le jour où une politique de rétention par partition est ajoutée.
+  **Ce jour est arrivé (2026-08-15)** : un TTL de 90 jours existe maintenant
+  sur `start_time`, voir `docs/interfaces/clickhouse-retention.md` — c'est
+  précisément ce partitionnement qui le rend peu coûteux (suppression par
+  partition entière, pas ligne par ligne).
 - `agent_name` est réutilisé entre `ToolCallEvent` (l'agent qui exécute l'outil)
   et `AgentRunEvent` (l'agent lui-même) — même colonne, sémantique cohérente
   dans les deux cas (dossier ne distingue pas les deux).

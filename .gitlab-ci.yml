@@ -20,10 +20,24 @@ variables:
       - .cargo/registry
       - target/
 
+# Quota CI limité (compte gratuit) : la vérification systématique se fait en
+# local avant chaque commit (voir CLAUDE.md — build/test/clippy/fmt "doivent
+# rester au vert"), donc le pipeline automatique n'est plus nécessaire à
+# chaque push sur dev. Auto sur main (le checkpoint stable), déclenchable à
+# la main sur les autres branches quand on veut vraiment la revérification
+# CI (ex. avant une fusion) sans consommer le quota à chaque commit.
+.on_main_auto_else_manual: &on_main_auto_else_manual
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: on_success
+    - when: manual
+      allow_failure: true
+
 fmt:
   stage: check
   image: rust:1.97.1-slim-bookworm
   <<: *cargo-cache
+  <<: *on_main_auto_else_manual
   # slim-bookworm ne fournit ni rustfmt ni clippy par défaut (contrairement
   # à l'image rust: non-slim) — trouvé en reproduisant l'échec du premier
   # run CI dans le même conteneur en local, pas deviné depuis la doc.
@@ -36,6 +50,7 @@ clippy:
   stage: check
   image: rust:1.97.1-slim-bookworm
   <<: *cargo-cache
+  <<: *on_main_auto_else_manual
   before_script:
     - rustup component add clippy
   script:
@@ -44,11 +59,13 @@ clippy:
 # Couvre à la fois les tests par défaut (cargo test --workspace) et les
 # tests d'intégration marqués #[ignore] qui ont besoin d'un vrai ClickHouse
 # (crates/clickhouse-sink, crates/query-api — chacun applique sa propre
-# migration au démarrage du test, pas d'étape d'init séparée ici).
+# migration au démarrage du test, pas d'étape d'init séparée ici) ou du
+# plugin WASM compilé (crates/plugin-wasm-host, docs/interfaces/wasm-plugin-loading.md).
 test:
   stage: test
   image: rust:1.97.1-slim-bookworm
   <<: *cargo-cache
+  <<: *on_main_auto_else_manual
   services:
     - name: clickhouse/clickhouse-server:latest
       alias: clickhouse
@@ -59,7 +76,10 @@ test:
     CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
     CLICKHOUSE_URL: http://clickhouse:8123
     CLICKHOUSE_DATABASE: observability
+  before_script:
+    - rustup target add wasm32-unknown-unknown
   script:
+    - ./scripts/build-wasm-plugins.sh
     - cargo test --workspace
     - cargo test --workspace -- --ignored
 

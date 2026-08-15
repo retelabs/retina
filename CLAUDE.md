@@ -212,10 +212,39 @@ dev fixes dans `docker-compose.stack.yml`, même posture que
 kernel réel via gRPC authentifié, requêtes `query-api` authentifiées
 retournant les traces/métriques attendues.
 
-Reste à faire, pas encore commencé : chargement dynamique des plugins
-(actuellement codés en dur dans `crates/kernel/src/main.rs`), découpler
-`PluginSink` du chemin synchrone d'ingestion, stratégie de rétention/évolution
-de schéma ClickHouse.
+**Activation des plugins par config — fait.** Portée délibérément réduite,
+tranchée avec l'utilisateur : activer/désactiver par configuration les
+plugins natifs déjà compilés (`FraudosPlugin`, `MedicalPlugin`), pas un
+vrai chargement dynamique de code arbitraire — ça, c'est la question WASM
+(`crates/plugin-wasm-host`, déjà construite et vérifiée équivalente au
+plugin natif mais toujours pas branchée dans le pipeline réel), qui reste
+ouverte et volontairement pas attaquée ici parce qu'elle soulève une
+question non tranchée en plus (gestion d'un plugin WASM tiers qui panique/
+boucle, voir `docs/interfaces/plugin-contract-v0.md`).
+
+`ENABLED_PLUGINS` (`crates/kernel/src/main.rs`, fonction pure
+`select_enabled` testée séparément de la lecture d'env) : liste de noms
+séparés par des virgules parmi les noms réels retournés par
+`Plugin::name()` (`fraudos-plugin`, `medical-plugin`). Non défini = tous les
+plugins tournent (comportement identique à avant, aucune config nouvelle
+requise pour `scripts/demo.sh` ou un déploiement existant) ; chaîne vide
+explicite = aucun plugin ; un nom inconnu fait paniquer le démarrage plutôt
+que d'être ignoré silencieusement (une faute de frappe qui désactiverait un
+plugin sans avertissement serait pire qu'un crash au démarrage). Résolu
+avant toute connexion ClickHouse, au même endroit que la validation de
+`KERNEL_API_KEY` — une erreur de config doit échouer immédiatement, pas
+après un aller-retour réseau.
+
+Vérifié : 5 tests unitaires sur `select_enabled` (non défini, chaîne vide,
+sous-ensemble valide, espaces tolérés, nom inconnu → panic) ; et les 4
+scénarios lancés pour de vrai (`cargo run -p kernel` contre un vrai
+ClickHouse) — nom invalide paniqué avant tout accès réseau, chaîne vide
+démarrée avec 0 plugin, non défini démarré avec tous les plugins, sous-
+ensemble valide démarré normalement.
+
+Reste à faire, pas encore commencé : découpler `PluginSink` du chemin
+synchrone d'ingestion, stratégie de rétention/évolution de schéma
+ClickHouse.
 
 ## Hors périmètre volontaire du MVP (dossier section 4)
 

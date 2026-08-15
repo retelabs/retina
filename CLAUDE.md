@@ -321,6 +321,20 @@ et chiffrer — ses propres briques d'infrastructure plutôt que de consommer
 des services managés tout faits. Le choix du fournisseur reste ouvert,
 volontairement secondaire à cet objectif.
 
+**Critère précisé le 2026-08-15 (fin de journée)** : le rejet des services
+managés n'est pas catégorique — c'est spécifiquement le coût **facturé
+indépendamment de l'usage** qui doit être évité (frais de control plane
+Kubernetes managé même à zéro pod, bases managées facturées à l'instance
+provisionnée type RDS/ClickHouse Cloud, capacité réservée type DynamoDB
+provisioned/NAT gateway à l'heure). Un vrai pay-per-use (facturé à l'appel,
+zéro usage = zéro facture) ou un coût fixe déjà minimal et accepté (une
+VM/VPS pas chère qu'on paie de toute façon, cf. le choix "hardware nu +
+Docker" déjà fait) restent acceptables — le "gâchis" y est plafonné et
+connu d'avance, pas une surprise de facturation. Implication directe pour
+le chantier "modèle de coût" à venir : calculer le **coût à usage zéro** de
+chaque option, pas seulement à volume attendu — c'est ce chiffre qui doit
+dominer la comparaison tant que le volume réel reste proche de zéro.
+
 `crates/orchestrator` — un control plane "maison" en Rust, contre l'API
 Engine de Docker directement (crate `bollard` 0.21.0), pas une enveloppe de
 `docker compose`. Contrat vérifié en lisant le vrai code source de

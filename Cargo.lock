@@ -1252,6 +1252,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "plugin-fraudos"
+version = "0.1.0"
+dependencies = [
+ "kernel-model",
+ "plugin-api",
+]
+
+[[package]]
 name = "plugin-wasm-example"
 version = "0.1.0"
 dependencies = [

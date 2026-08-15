@@ -1,5 +1,6 @@
-//! Wires the OTLP/traces receiver (crates/otlp-receiver) to the ClickHouse
-//! sink (crates/clickhouse-sink) and actually runs it as a gRPC server.
+//! Wires the OTLP/traces receiver (crates/otlp-receiver) through the plugin
+//! layer (crates/plugin-sink) to the ClickHouse sink (crates/clickhouse-sink)
+//! and actually runs it as a gRPC server.
 //!
 //! Neither of those crates could depend on the other's binary shape without
 //! a cycle (`clickhouse-sink` already depends on `otlp-receiver` for
@@ -7,10 +8,19 @@
 //! process you can run, rather than a library you can only unit-test — the
 //! thing dossier étape 7 needs ("faire tourner le kernel contre un vrai flux
 //! de télémétrie").
+//!
+//! `PluginSink` wraps `ClickHouseSink`: this is the first time any plugin
+//! actually runs as part of ingestion, not just in isolated crate tests —
+//! see docs/interfaces/oncology-governance.md for why this insertion point
+//! was chosen.
 
 use clickhouse::Client;
 use clickhouse_sink::ClickHouseSink;
 use otlp_receiver::{Receiver, TraceServiceServer};
+use plugin_api::Plugin;
+use plugin_fraudos::FraudosPlugin;
+use plugin_medical::MedicalPlugin;
+use plugin_sink::PluginSink;
 use tonic::transport::Server;
 
 fn env_or(key: &str, default: &str) -> String {
@@ -42,7 +52,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .execute()
         .await?;
 
-    let sink = ClickHouseSink::new(client, table);
+    let clickhouse_sink = ClickHouseSink::new(client, table);
+    let plugins: Vec<Box<dyn Plugin>> = vec![Box::new(FraudosPlugin), Box::new(MedicalPlugin)];
+    let sink = PluginSink::new(clickhouse_sink, plugins);
     let receiver = Receiver::new(sink);
 
     eprintln!("kernel (otlp-receiver + clickhouse-sink) listening on {bind_addr}");

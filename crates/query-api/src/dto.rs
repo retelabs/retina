@@ -111,4 +111,10 @@ pub struct KindMetricsDto {
 #[derive(Debug, Clone, Serialize)]
 pub struct MetricsSummaryDto {
     pub by_kind: Vec<KindMetricsDto>,
+    /// Spans carrying at least one `plugin.warning` entry in
+    /// `extra_attributes` — the governance/monitoring signal
+    /// `crates/plugin-sink` produces (docs/interfaces/oncology-governance.md).
+    /// Zero for every span until a plugin is actually wired into a running
+    /// `kernel` (`crates/kernel/src/main.rs`).
+    pub spans_with_warnings: u64,
 }

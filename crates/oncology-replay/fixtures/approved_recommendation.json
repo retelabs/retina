@@ -1,0 +1,12 @@
+{
+  "session_id": "onco-sess-2026-08-15-001",
+  "patient_id": "PT-88213",
+  "current_step": "done",
+  "hipaa_cleared": true,
+  "gdpr_cleared": true,
+  "compliance_flags": ["HIPAA_CLEARED", "GDPR_CLEARED"],
+  "submitted_by": "dr.okafor@oncology-suite.example",
+  "approved_by": "dr.lindqvist@oncology-suite.example",
+  "started_at": "2026-08-15T14:02:11.000000+00:00",
+  "ended_at": "2026-08-15T14:02:47.500000+00:00"
+}

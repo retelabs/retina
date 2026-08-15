@@ -1019,6 +1019,10 @@ dependencies = [
  "clickhouse",
  "clickhouse-sink",
  "otlp-receiver",
+ "plugin-api",
+ "plugin-fraudos",
+ "plugin-medical",
+ "plugin-sink",
  "tokio",
  "tonic",
 ]
@@ -1169,6 +1173,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
+name = "oncology-replay"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "otlp-receiver",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tonic",
+]
+
+[[package]]
 name = "otlp-receiver"
 version = "0.1.0"
 dependencies = [
@@ -1257,6 +1273,24 @@ version = "0.1.0"
 dependencies = [
  "kernel-model",
  "plugin-api",
+]
+
+[[package]]
+name = "plugin-medical"
+version = "0.1.0"
+dependencies = [
+ "kernel-model",
+ "plugin-api",
+]
+
+[[package]]
+name = "plugin-sink"
+version = "0.1.0"
+dependencies = [
+ "kernel-model",
+ "otlp-receiver",
+ "plugin-api",
+ "tokio",
 ]
 
 [[package]]

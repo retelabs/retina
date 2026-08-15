@@ -1,0 +1,12 @@
+[package]
+name = "plugin-sink"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+kernel-model = { version = "0.1.0", path = "../kernel-model" }
+otlp-receiver = { version = "0.1.0", path = "../otlp-receiver" }
+plugin-api = { version = "0.1.0", path = "../plugin-api" }
+
+[dev-dependencies]
+tokio = { version = "1.53.1", features = ["macros", "rt"] }

@@ -7,5 +7,9 @@ edition.workspace = true
 clickhouse = "0.15.1"
 clickhouse-sink = { version = "0.1.0", path = "../clickhouse-sink" }
 otlp-receiver = { version = "0.1.0", path = "../otlp-receiver" }
+plugin-api = { version = "0.1.0", path = "../plugin-api" }
+plugin-fraudos = { version = "0.1.0", path = "../plugin-fraudos" }
+plugin-medical = { version = "0.1.0", path = "../plugin-medical" }
+plugin-sink = { version = "0.1.0", path = "../plugin-sink" }
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros"] }
 tonic = "0.14.6"

@@ -111,6 +111,26 @@ bit à bit sa sortie à celle du plugin natif `ExamplePlugin` (4 tests
 ne plante pas", une vraie preuve d'équivalence comportementale entre les deux
 modalités de chargement.
 
+Deuxième vertical réel + câblage du plugin dans le pipeline (2026-08-15) :
+`crates/plugin-medical` interprète les invariants de gouvernance
+**réellement lus** dans `the oncology pipeline repository` (oncologie,
+cloné en lecture seule) — gate de conformité HIPAA/GDPR déterministe
+(Presidio/NER) et gate HITL (`interrupt_before`), tous deux cités mot pour
+mot depuis le `CLAUDE.md` du repo source. Trouvaille notable : une deuxième
+implémentation du même vertical (`client-project`) fait juger la conformité
+RGPD **par le LLM lui-même** (texte libre, pas de sortie structurée) —
+divergence réelle entre deux systèmes de prod, pas supposée. Détails et
+mapping dans `docs/interfaces/oncology-governance.md`, `crates/oncology-replay`
+(3 fixtures). **`crates/plugin-sink`** (`PluginSink<S: SpanSink>`) résout la
+question laissée ouverte depuis l'étape 5 ("où insérer l'appel plugin dans
+le pipeline") : décorateur autour de n'importe quel `SpanSink`, câblé pour de
+vrai dans `crates/kernel` (enveloppe `ClickHouseSink`, avec `FraudosPlugin`
+et `MedicalPlugin`) — première fois qu'un plugin tourne dans l'ingestion
+réelle, pas seulement en test isolé. `query-api::/metrics/summary` expose
+`spans_with_warnings`. Vérifié de bout en bout : kernel réel + rejeu
+fraudos/oncologie + avertissements attendus retrouvés en base ET dans les
+métriques.
+
 Étape 7 : validé contre le cas fraudos réel (`the fraudos prototype repository`, cloné
 en lecture seule, pas vendoré). **Correction au dossier section 3** :
 `fraudos-prototype` n'a en réalité aucune instrumentation ADOT/OTel — observabilité

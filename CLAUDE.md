@@ -536,10 +536,15 @@ convention d'attributs `fraudos.*`/`oncology.*` ; les 3 endpoints
 nouveau tranché ici. Pointeurs vers `docs/interfaces/` pour qui veut le
 détail vérifié complet, pas de duplication.
 
-Autre constat de la cartographie, pas encore traité : `docs/adr/` n'a que
-le template, aucune ADR n'a jamais été écrite malgré `/adr` — les
-décisions structurantes (auth, architecture hybride...) vivent dans ce
-fichier à la place.
+Autre constat de la cartographie, traité le jour même : `docs/adr/` n'avait
+que le template, aucune ADR n'avait jamais été écrite malgré `/adr` — les
+4 questions ouvertes listées dans `docs/adr/README.md` (dossier section 5)
+étaient en réalité déjà tranchées, juste jamais formalisées en ADR.
+Rédigées rétroactivement : `0001` (multi-tenant hors périmètre),
+`0002` (modèle d'hébergement — auto-hébergé, fournisseur toujours différé),
+`0003` (ClickHouse auto-hébergé), `0004` (plugins natifs, WASM différé pas
+rejeté). Aucune nouvelle décision tranchée par l'exercice — une
+rétro-documentation, pas une nouvelle négociation.
 
 ## Repères techniques
 

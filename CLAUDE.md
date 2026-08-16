@@ -521,6 +521,26 @@ conventions GenAI (retrieval, mémoire…), couche d'analyse agentique
 (RCA/anomalies), dashboard riche, multi-cloud simultané. Ne pas anticiper ces
 besoins dans le code du kernel MVP.
 
+## Documentation client (2026-08-16)
+
+Cartographie de l'état du projet avec l'utilisateur : aucun `README.md` à
+la racine n'existait, et `docs/interfaces/` documente des contrats vérifiés
+pour nous (source, date de vérification) — pas une doc orientée "comment
+utiliser trellis depuis mon application". `README.md` (racine, nouveau) et
+`docs/client-integration.md` comblent ça : synthèse orientée client de
+contrats déjà vérifiés (mapping `gen_ai.operation.name` → événement kernel
+avec ses champs requis exacts, tiré du vrai code de dispatch
+`crates/otlp-receiver/src/convert.rs` plutôt que reformulé de mémoire ;
+convention d'attributs `fraudos.*`/`oncology.*` ; les 3 endpoints
+`query-api` avec la liste complète des champs de `SpanDto`), rien de
+nouveau tranché ici. Pointeurs vers `docs/interfaces/` pour qui veut le
+détail vérifié complet, pas de duplication.
+
+Autre constat de la cartographie, pas encore traité : `docs/adr/` n'a que
+le template, aucune ADR n'a jamais été écrite malgré `/adr` — les
+décisions structurantes (auth, architecture hybride...) vivent dans ce
+fichier à la place.
+
 ## Repères techniques
 
 - Ingestion OTLP : `tonic` + `prost`.

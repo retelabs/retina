@@ -335,6 +335,19 @@ le chantier "modèle de coût" à venir : calculer le **coût à usage zéro** d
 chaque option, pas seulement à volume attendu — c'est ce chiffre qui doit
 dominer la comparaison tant que le volume réel reste proche de zéro.
 
+**Proposition d'architecture validée comme point de départ (2026-08-16)** :
+cœur auto-hébergé (VM + `orchestrator` + ClickHouse/kernel/query-api)
+commun aux deux options envisagées, extensions "hybrides" pay-per-use
+(registre de conteneurs, edge/CDN, stockage objet pour les backups) ajoutées
+une par une seulement si elles comblent un vrai manque — diagramme dans
+`docs/interfaces/` à venir si le choix se stabilise. Testé et ajusté au fil
+des découvertes, pas figé. **Deuxième critère explicite** : même pour une
+extension pay-per-use légitime (coût nul à usage nul), préférer la coder
+nous-mêmes quand la valeur d'apprentissage le justifie — le critère de coût
+(section précédente) reste ce qui tranche quand l'effort de réécriture
+dépasse ce que ça enseigne (ex. la durabilité du stockage objet est un vrai
+chantier d'ingénierie, pas juste un exercice).
+
 `crates/orchestrator` — un control plane "maison" en Rust, contre l'API
 Engine de Docker directement (crate `bollard` 0.21.0), pas une enveloppe de
 `docker compose`. Contrat vérifié en lisant le vrai code source de

@@ -481,9 +481,38 @@ contre le vrai `Router` ; et bout en bout réel — lancé sans
 pile déployée derrière l'auth fonctionne réellement.
 
 Avec ceci, les deux lacunes de sécurité identifiées sur `crates/orchestrator`
-(pas d'auth, prérequis d'image externe) sont comblées. Pas encore fait : le
-deuxième chantier envisagé pour le même objectif d'apprentissage — une
-méthode de calcul de coût réel.
+(pas d'auth, prérequis d'image externe) sont comblées.
+
+**Modèle de coût réel — fait (2026-08-16).** `crates/cost-model` rend
+vérifiable avec de vrais nombres le critère posé la veille (comparer par le
+**coût à usage zéro**). Deux catégories d'entrées, chacune vérifiée à sa
+façon : octets/span **mesurés** contre un vrai ClickHouse
+(`system.parts.data_compressed_bytes`, pas une estimation analytique
+depuis le schéma qui ignorerait la compression réelle) ; prix VM/stockage
+objet/CDN **vérifiés contre les pages officielles réelles**, pas des
+agrégateurs (une première recherche via agrégateurs a donné des chiffres
+Hetzner contradictoires, écartés). Détail complet des sources dans
+`docs/cost-model.md`.
+
+Résultat concret, pas juste une méthode : à `0` spans/jour les extensions
+hybrides tombent exactement à `0` — la preuve numérique du critère
+d'hier. Au repère du dossier pour l'arbitrage ClickHouse managé/auto-hébergé
+(100 000 spans/jour), le stockage accumulé sur 90 jours reste sous le
+palier gratuit Backblaze B2 — le coût qui domine reste la VM (identique
+entre "100% perso" et "hybride"), pas les extensions.
+
+Vérifié à deux niveaux : tests unitaires sur `report.rs` (fonctions pures,
+sans Docker ni ClickHouse) et un test `--ignored` qui mesure réellement
+contre un vrai ClickHouse contenant les fixtures `fraudos-replay`/
+`oncology-replay` déjà rejouées. `cargo run -p cost-model` lu à la main
+contre les données réelles de la session — le stockage croît avec le
+volume, la VM reste fixe, comme attendu.
+
+Pas encore fait, notes explicites dans `docs/cost-model.md` : egress du
+stockage objet au-delà du palier gratuit, décomposition du coût de calcul
+par service (la VM est traitée comme un coût fixe unique), comparaison à
+d'autres fournisseurs VM (OVH, Scaleway, DigitalOcean) — Hetzner est un
+premier point de repère vérifié, pas une décision de fournisseur.
 
 ## Hors périmètre volontaire du MVP (dossier section 4)
 

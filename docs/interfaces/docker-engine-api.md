@@ -157,14 +157,56 @@ et manuellement, serveur réellement lancé (`cargo run -p orchestrator`),
 une vraie requête `query-api` confirmant que les conteneurs déployés par
 l'API HTTP fonctionnent réellement, pas seulement `status: "Healthy"`.
 
+## Construction d'image via l'API (`crates/orchestrator/src/image_build.rs`)
+
+`kernel`/`query-api` utilisent maintenant `ImageSource::Build { context,
+dockerfile }` — plus de `docker build` externe requis avant `deploy_all`.
+`ensure_image` construit un tar du contexte en mémoire, l'envoie à
+`POST /build` (`bollard::Docker::build_image`), et consomme le flux de
+progression jusqu'à la fin (ou une erreur).
+
+- **Contexte identique à `docker-compose.stack.yml`** : racine du repo
+  (`crates/orchestrator` → `../..`, résolu via `CARGO_MANIFEST_DIR`), parce
+  que `kernel.Dockerfile`/`query-api.Dockerfile` font `COPY . .` sur tout le
+  workspace Cargo, pas seulement leur propre crate.
+- **`.dockerignore` respecté, mais volontairement réduit** : matching par
+  composant de chemin à n'importe quelle profondeur (`target/`,
+  `.fastembed_cache/`, `.git/`, `.gitlab-ci.yml`, `*.md`) — pas d'ancrage
+  via `/` en tête, pas de négation `!`. Le vrai `.dockerignore` de ce repo
+  n'a besoin ni de l'un ni de l'autre ; documenté comme une réduction
+  assumée, pas une réimplémentation partielle qui prétendrait être complète.
+- **Construit à chaque déploiement**, pas seulement si l'image est absente
+  — même sémantique que `docker build`/`docker compose build` : le cache de
+  couches de Docker rend un contexte inchangé rapide à reconstruire, ce
+  n'est pas à nous de décider quand rebuilder. **Limite connue** :
+  `ensure_image` (donc `Build`) ne tourne que quand le conteneur n'existe
+  pas encore — un conteneur déjà démarré depuis une image plus ancienne
+  n'est pas recréé automatiquement après un rebuild ; il faut le détruire
+  d'abord.
+- **`ImageSource::Local` reste disponible** pour un service dont ce control
+  plane ne doit gérer l'image ni en la tirant ni en la construisant — plus
+  utilisé par la topologie trellis aujourd'hui, mais un choix valide de
+  l'API.
+
+Trouvaille réelle : `BuildInfo` (chaque événement du flux `/build`) n'a pas
+de champ `error` plat comme `CreateImageInfo` — seulement `error_detail:
+Option<ErrorDetail>`. Deviné faux une première fois en écrivant le code par
+analogie avec `create_image`, corrigé en relisant le vrai struct dans
+`bollard-stubs`.
+
+Vérifié contre un vrai démon Docker, pas seulement compilé : un test dédié
+construit réellement `docker/kernel.Dockerfile` via l'API (`cargo build
+--release -p kernel` tourne pour de vrai dans le conteneur builder, ~64s à
+froid) puis confirme que l'image produite a le bon `ENTRYPOINT` —
+`crates/orchestrator/tests/build_integration.rs`, `--ignored`. Et bout en
+bout réel : `POST /deploy` construit maintenant `kernel`/`query-api` lui-
+même avant de les démarrer (`crates/orchestrator/tests/api_integration.rs`
+mis à jour, plus besoin d'un `docker build` préalable), suivi d'un vrai
+rejeu gRPC (`fraudos-replay`) et d'une vraie requête `query-api` confirmant
+que l'image construite par notre propre code fonctionne réellement.
+
 ## Pas encore fait
 
-- **Construction d'image via l'API** (`/build`, contexte de build en tar
-  streamé) — `kernel`/`query-api` doivent être construits par le chemin
-  existant (`docker/docker-compose.stack.yml` ou `docker build` direct)
-  avant que `deploy_all` puisse les déployer ; `ImageSource::Local` échoue
-  avec une erreur explicite (`MissingLocalImage`) plutôt que de tenter un
-  pull qui échouerait de façon confuse.
 - **Authentification** sur `crates/orchestrator` (voir plus haut).
 - **Modèle de coût** — deuxième chantier envisagé pour le même objectif
   d'apprentissage, pas commencé.

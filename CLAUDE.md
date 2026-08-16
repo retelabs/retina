@@ -430,9 +430,41 @@ gRPC (`fraudos-replay`) et une vraie requête `query-api` confirmant que les
 conteneurs déployés par l'API HTTP fonctionnent pour de vrai, pas
 seulement `status: "Healthy"`.
 
-Pas encore fait : construction d'image via l'API Docker, et un deuxième
-chantier envisagé pour le même objectif d'apprentissage — une méthode de
-calcul de coût réel.
+**Construction d'image via l'API — fait.** `kernel`/`query-api` utilisent
+`ImageSource::Build { context, dockerfile }` — plus de `docker build`
+externe requis avant `deploy_all`. `crates/orchestrator/src/image_build.rs`
+construit un tar du contexte (racine du repo, résolue via
+`CARGO_MANIFEST_DIR`) en mémoire, respectant `.dockerignore` mais
+volontairement réduit (matching par composant à n'importe quelle
+profondeur, pas d'ancrage `/` ni de négation `!` — le vrai `.dockerignore`
+de ce repo n'a besoin ni de l'un ni de l'autre). `ensure_image` envoie ce
+tar à `POST /build` (`bollard::Docker::build_image`) et consomme le flux de
+progression jusqu'à la fin ou une erreur.
+
+Construit à chaque déploiement, pas seulement si l'image est absente — même
+sémantique que `docker build`/`docker compose build`, le cache de couches
+de Docker rend un contexte inchangé rapide à reconstruire. Limite connue,
+documentée : un conteneur déjà démarré depuis une image plus ancienne n'est
+pas recréé automatiquement après un rebuild, il faut le détruire d'abord.
+
+Trouvaille réelle : `BuildInfo` n'a pas de champ `error` plat comme
+`CreateImageInfo` — seulement `error_detail: Option<ErrorDetail>`. Deviné
+faux par analogie avec `create_image` en écrivant le code une première
+fois, corrigé en relisant le vrai struct dans `bollard-stubs`.
+
+Vérifié contre un vrai démon Docker : un test dédié construit réellement
+`docker/kernel.Dockerfile` via l'API (`cargo build --release -p kernel`
+tourne pour de vrai dans le conteneur builder, ~64s à froid) et confirme
+que l'image produite a le bon `ENTRYPOINT`. Bout en bout réel :
+`POST /deploy` construit maintenant `kernel`/`query-api` lui-même avant de
+les démarrer, suivi d'un vrai rejeu gRPC (`fraudos-replay`) et d'une vraie
+requête `query-api` confirmant que l'image construite par notre propre code
+fonctionne réellement — plus seulement testé, le prérequis externe
+`scripts/dev-stack.sh build` a disparu pour de vrai.
+
+Pas encore fait : authentification sur `crates/orchestrator`, et le
+deuxième chantier envisagé pour le même objectif d'apprentissage — une
+méthode de calcul de coût réel.
 
 ## Hors périmètre volontaire du MVP (dossier section 4)
 

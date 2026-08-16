@@ -3,4 +3,5 @@
 
 pub mod api;
 pub mod docker_client;
+pub mod image_build;
 pub mod topology;

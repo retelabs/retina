@@ -3,12 +3,24 @@
 //! primitives, knows nothing about trellis) and from `api`/`main` (HTTP
 //! wiring), so each stays about one thing.
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::docker_client::{HealthCheckSpec, ImageSource, ManagedService, PortSpec};
 
 pub const NETWORK: &str = "trellis-orchestrator-net";
 const CLICKHOUSE_NAME: &str = "trellis-orchestrator-clickhouse";
+
+/// `crates/orchestrator` -> repo root — the same build context
+/// `docker/docker-compose.stack.yml` uses (`context: ..` relative to
+/// `docker/`), needed because `kernel.Dockerfile`/`query-api.Dockerfile`
+/// `COPY . .` the whole Cargo workspace, not just their own crate.
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("repo root should exist relative to CARGO_MANIFEST_DIR")
+}
 
 fn clickhouse_service() -> ManagedService {
     // Même image/variables d'env/healthcheck que docker/docker-compose.stack.yml
@@ -52,8 +64,11 @@ fn clickhouse_url() -> String {
 fn kernel_service() -> ManagedService {
     ManagedService {
         name: "trellis-orchestrator-kernel".to_string(),
-        image: "docker-kernel:latest".to_string(),
-        image_source: ImageSource::Local,
+        image: "trellis-kernel:latest".to_string(),
+        image_source: ImageSource::Build {
+            context: repo_root(),
+            dockerfile: "docker/kernel.Dockerfile".to_string(),
+        },
         env: vec![
             format!("CLICKHOUSE_URL={}", clickhouse_url()),
             "CLICKHOUSE_USER=dev".to_string(),
@@ -75,8 +90,11 @@ fn kernel_service() -> ManagedService {
 fn query_api_service() -> ManagedService {
     ManagedService {
         name: "trellis-orchestrator-query-api".to_string(),
-        image: "docker-query-api:latest".to_string(),
-        image_source: ImageSource::Local,
+        image: "trellis-query-api:latest".to_string(),
+        image_source: ImageSource::Build {
+            context: repo_root(),
+            dockerfile: "docker/query-api.Dockerfile".to_string(),
+        },
         env: vec![
             format!("CLICKHOUSE_URL={}", clickhouse_url()),
             "CLICKHOUSE_USER=dev".to_string(),

@@ -9,19 +9,24 @@
 
 use std::collections::HashMap;
 use std::fmt;
+use std::path::PathBuf;
 use std::time::Duration;
 
 use bollard::Docker;
+use bollard::body_full;
 use bollard::errors::Error as BollardError;
 use bollard::models::{
-    ContainerCreateBody, ContainerState, HealthConfig, HealthStatusEnum, HostConfig,
+    BuildInfo, ContainerCreateBody, ContainerState, HealthConfig, HealthStatusEnum, HostConfig,
     NetworkCreateRequest, NetworkCreateResponse, PortBinding,
 };
 use bollard::query_parameters::{
-    CreateContainerOptions, CreateImageOptions, InspectContainerOptions, ListContainersOptions,
-    ListNetworksOptions, RemoveContainerOptions, StartContainerOptions, StopContainerOptions,
+    BuildImageOptionsBuilder, CreateContainerOptions, CreateImageOptions, InspectContainerOptions,
+    ListContainersOptions, ListNetworksOptions, RemoveContainerOptions, StartContainerOptions,
+    StopContainerOptions,
 };
 use futures_util::StreamExt;
+
+use crate::image_build::build_context_tar;
 
 #[derive(Debug)]
 pub enum OrchestratorError {
@@ -33,10 +38,18 @@ pub enum OrchestratorError {
         service: String,
         waited: Duration,
     },
-    /// `ImageSource::Local` and the image isn't there — this control plane
-    /// doesn't build images yet (docs/interfaces/docker-engine-api.md),
-    /// build via the existing Dockerfile path first.
+    /// `ImageSource::Local` and the image isn't there — for services that
+    /// deliberately don't use `Build` (this control plane pulling their
+    /// image is out of scope for them too), build via the existing
+    /// Dockerfile path first.
     MissingLocalImage(String),
+    /// Reading the build context (walking the directory, tarring it up)
+    /// failed before Docker was ever involved — a local filesystem
+    /// problem, not a daemon one.
+    BuildContext(std::io::Error),
+    /// The daemon accepted and ran the build, but it failed — `BuildInfo`'s
+    /// own error message, not a transport-level `BollardError`.
+    BuildFailed(String),
     /// A `depends_on` names a service that isn't in the batch being
     /// deployed — caught before touching Docker at all, not left to
     /// surface as a confusing runtime failure partway through a deploy.
@@ -59,6 +72,8 @@ impl fmt::Display for OrchestratorError {
                 f,
                 "image `{image}` not found locally and is not pulled from a registry — build it first"
             ),
+            OrchestratorError::BuildContext(e) => write!(f, "failed to read build context: {e}"),
+            OrchestratorError::BuildFailed(message) => write!(f, "image build failed: {message}"),
             OrchestratorError::UnknownDependency {
                 service,
                 depends_on,
@@ -107,16 +122,27 @@ impl From<&HealthCheckSpec> for HealthConfig {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ImageSource {
     /// Pulled from a registry if not already present locally — what
     /// `clickhouse/clickhouse-server:latest` is.
     Registry,
-    /// Must already exist locally (built via `docker build -f
-    /// docker/<name>.Dockerfile ...`, the same Dockerfiles
-    /// `docker/docker-compose.stack.yml` uses) — this control plane
-    /// doesn't drive an image build itself yet.
+    /// Must already exist locally — for a service whose image this control
+    /// plane is deliberately not responsible for at all (neither pulled
+    /// nor built here).
     Local,
+    /// Built from a Dockerfile via the real `/build` Engine API endpoint —
+    /// what `kernel`/`query-api` use now, replacing the `docker build`
+    /// step that used to happen outside this crate entirely.
+    Build {
+        /// Build context root, tarred up in memory
+        /// (`crates/orchestrator/src/image_build.rs`) respecting
+        /// `.dockerignore` at that root.
+        context: PathBuf,
+        /// Dockerfile path, relative to `context` — matches the `-f` flag
+        /// of `docker build` / the `dockerfile:` key of a compose service.
+        dockerfile: String,
+    },
 }
 
 /// A published `container_port -> host_port` mapping, TCP only (the only
@@ -179,7 +205,7 @@ async fn container_exists(docker: &Docker, name: &str) -> Result<bool, Orchestra
 async fn ensure_image(
     docker: &Docker,
     image: &str,
-    source: ImageSource,
+    source: &ImageSource,
 ) -> Result<(), OrchestratorError> {
     match source {
         ImageSource::Registry => {
@@ -203,7 +229,41 @@ async fn ensure_image(
                 } => OrchestratorError::MissingLocalImage(image.to_string()),
                 other => OrchestratorError::Docker(other),
             }),
+        ImageSource::Build {
+            context,
+            dockerfile,
+        } => build_image(docker, context, dockerfile, image).await,
     }
+}
+
+/// Builds `image` from `dockerfile` (relative to `context`) via the real
+/// `/build` Engine API endpoint. Always runs — unlike `Registry`'s
+/// "pull only if missing", a build is expected to run on every deploy the
+/// same way `docker build`/`docker compose build` do; Docker's own layer
+/// cache is what keeps a rebuild of an unchanged context fast, not a
+/// decision made here.
+async fn build_image(
+    docker: &Docker,
+    context: &std::path::Path,
+    dockerfile: &str,
+    tag: &str,
+) -> Result<(), OrchestratorError> {
+    let tar = build_context_tar(context).map_err(OrchestratorError::BuildContext)?;
+
+    let options = BuildImageOptionsBuilder::default()
+        .dockerfile(dockerfile)
+        .t(tag)
+        .rm(true)
+        .build();
+
+    let mut build = docker.build_image(options, None, Some(body_full(tar.into())));
+    while let Some(event) = build.next().await {
+        let info: BuildInfo = event?;
+        if let Some(message) = info.error_detail.and_then(|d| d.message) {
+            return Err(OrchestratorError::BuildFailed(message));
+        }
+    }
+    Ok(())
 }
 
 /// Same shape as `bollard::models::PortMap`, spelled out locally so
@@ -241,13 +301,20 @@ fn port_config(ports: &[PortSpec]) -> (Option<Vec<String>>, Option<PortBindings>
 /// each other by name; Docker's default `bridge` network does *not* give
 /// containers DNS resolution by name, only a user-defined one does, which
 /// is why `deploy_all` always creates one via `ensure_network` first).
+///
+/// Known limitation: `ensure_image` (including a real `Build`) only runs
+/// when the container doesn't exist yet — a container already running from
+/// an older image build is not recreated from a fresher one. Rebuilding
+/// picked-up code changes today means tearing the container down first;
+/// detecting "the image actually changed" and recreating on top of that is
+/// a real reconciliation feature, not attempted here.
 pub async fn ensure_running(
     docker: &Docker,
     network: &str,
     service: &ManagedService,
 ) -> Result<(), OrchestratorError> {
     if !container_exists(docker, &service.name).await? {
-        ensure_image(docker, &service.image, service.image_source).await?;
+        ensure_image(docker, &service.image, &service.image_source).await?;
 
         let (exposed_ports, port_bindings) = port_config(&service.ports);
         let config = ContainerCreateBody {

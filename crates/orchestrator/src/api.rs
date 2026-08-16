@@ -100,7 +100,9 @@ impl IntoResponse for ApiError {
             }
             OrchestratorError::MissingLocalImage(_) => StatusCode::UNPROCESSABLE_ENTITY,
             OrchestratorError::HealthTimeout { .. } => StatusCode::GATEWAY_TIMEOUT,
-            OrchestratorError::Docker(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            OrchestratorError::BuildContext(_)
+            | OrchestratorError::BuildFailed(_)
+            | OrchestratorError::Docker(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
         (
             status,

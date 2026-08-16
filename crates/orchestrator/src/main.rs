@@ -5,11 +5,10 @@
 //! `kernel` + `query-api` (`crates/orchestrator/src/topology.rs`), replacing
 //! `scripts/dev-stack.sh` with a real service rather than a script.
 //!
-//! Prérequis : les images `docker-kernel:latest`/`docker-query-api:latest`
-//! doivent déjà exister localement (`scripts/dev-stack.sh up` une fois, ou
-//! `docker compose -f docker/docker-compose.stack.yml build`) — ce control
-//! plane ne construit pas encore d'image lui-même
-//! (docs/interfaces/docker-engine-api.md).
+//! `kernel`/`query-api` sont construits par ce control plane lui-même
+//! (`POST /build`, `src/image_build.rs` pour le contexte tar) — plus de
+//! `docker build` externe requis. Seul ClickHouse reste tiré d'un registre
+//! (`docs/interfaces/docker-engine-api.md`).
 //!
 //! Pas d'authentification (docs.rs/interfaces/docker-engine-api.md,
 //! `src/api.rs`) — délibérément différé, compensé par un bind par défaut

@@ -2,11 +2,13 @@
 //! — same pattern `crates/query-api` uses to test its `Router` in-process,
 //! no real TCP listener needed. Runs against the real local Docker daemon
 //! (this is the same 3-service trellis stack `main.rs` deploys, not a toy
-//! topology) and the real `docker-kernel:latest`/`docker-query-api:latest`
-//! images, so it needs both:
+//! topology) — `kernel`/`query-api` are built by `/deploy` itself now
+//! (`ImageSource::Build`), no external `docker build` prerequisite left:
 //!
-//!   docker compose -f docker/docker-compose.stack.yml build
 //!   cargo test -p orchestrator -- --ignored
+//!
+//! Slow the first time (a real release build of both binaries inside
+//! Docker) — fast on repeat runs via Docker's own layer cache.
 
 use std::sync::Arc;
 

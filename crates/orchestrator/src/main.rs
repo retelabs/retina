@@ -10,10 +10,12 @@
 //! `docker build` externe requis. Seul ClickHouse reste tiré d'un registre
 //! (`docs/interfaces/docker-engine-api.md`).
 //!
-//! Pas d'authentification (docs.rs/interfaces/docker-engine-api.md,
-//! `src/api.rs`) — délibérément différé, compensé par un bind par défaut
-//! sur `127.0.0.1` plutôt que `0.0.0.0` (contrairement à `crates/kernel`/
-//! `crates/query-api`, qui écoutent sur toutes les interfaces).
+//! Authentifié comme `crates/kernel`/`crates/query-api`
+//! (docs/interfaces/kernel-auth.md, `src/api.rs`) : `ORCHESTRATOR_API_KEY`,
+//! échec fermé au démarrage. `ORCHESTRATOR_BIND` reste par défaut sur
+//! `127.0.0.1` plutôt que `0.0.0.0` (contrairement à `crates/kernel`/
+//! `crates/query-api`) — l'authentification s'ajoute à cette prudence, ne
+//! la remplace pas.
 
 use std::sync::Arc;
 
@@ -27,15 +29,21 @@ fn env_or(key: &str, default: &str) -> String {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let docker = Docker::connect_with_local_defaults()?;
     let bind_addr = env_or("ORCHESTRATOR_BIND", "127.0.0.1:9000");
+    // Fails closed (docs/interfaces/kernel-auth.md): resolved before any
+    // Docker access, same order as crates/kernel — a config error must
+    // fail before touching a network or system resource, not after.
+    let api_key = std::env::var("ORCHESTRATOR_API_KEY")
+        .expect("ORCHESTRATOR_API_KEY must be set — see docs/interfaces/kernel-auth.md");
+
+    let docker = Docker::connect_with_local_defaults()?;
 
     let state = AppState {
         docker: Arc::new(docker),
         network: NETWORK.to_string(),
         services: Arc::new(trellis_stack()),
     };
-    let app = build_app(state);
+    let app = build_app(state, api_key);
 
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
     eprintln!("orchestrator listening on {bind_addr}");

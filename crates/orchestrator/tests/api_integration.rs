@@ -14,7 +14,7 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::body::Body;
-use axum::http::{Method, Request, StatusCode};
+use axum::http::{Method, Request, StatusCode, header};
 use bollard::Docker;
 use http_body_util::BodyExt;
 use orchestrator::api::{AppState, build_app};
@@ -23,13 +23,18 @@ use orchestrator::topology::{NETWORK, trellis_stack};
 use serde_json::Value;
 use tower::ServiceExt;
 
+const TEST_API_KEY: &str = "test-key";
+
 fn app() -> Router {
     let docker = Docker::connect_with_local_defaults().expect("failed to connect to Docker");
-    build_app(AppState {
-        docker: Arc::new(docker),
-        network: NETWORK.to_string(),
-        services: Arc::new(trellis_stack()),
-    })
+    build_app(
+        AppState {
+            docker: Arc::new(docker),
+            network: NETWORK.to_string(),
+            services: Arc::new(trellis_stack()),
+        },
+        TEST_API_KEY.to_string(),
+    )
 }
 
 async fn body_json(response: axum::response::Response) -> Value {
@@ -37,11 +42,13 @@ async fn body_json(response: axum::response::Response) -> Value {
     serde_json::from_slice(&bytes).unwrap()
 }
 
+/// Authenticated request — the path every real test below exercises.
 async fn request(app: Router, method: Method, path: &str) -> axum::response::Response {
     app.oneshot(
         Request::builder()
             .method(method)
             .uri(path)
+            .header(header::AUTHORIZATION, format!("Bearer {TEST_API_KEY}"))
             .body(Body::empty())
             .unwrap(),
     )
@@ -50,7 +57,7 @@ async fn request(app: Router, method: Method, path: &str) -> axum::response::Res
 }
 
 #[tokio::test]
-#[ignore = "requires a local Docker daemon and the docker-kernel/docker-query-api images"]
+#[ignore = "requires a local Docker daemon; builds real images the first time"]
 async fn deploy_status_teardown_round_trip_over_http() {
     // Clean slate — a previous failed run shouldn't make this test flaky.
     let docker = Docker::connect_with_local_defaults().unwrap();
@@ -83,4 +90,23 @@ async fn deploy_status_teardown_round_trip_over_http() {
     for entry in after_teardown.as_array().unwrap() {
         assert_eq!(entry["status"], "Absent");
     }
+}
+
+#[tokio::test]
+#[ignore = "requires a local Docker daemon"]
+async fn requests_without_a_valid_bearer_token_are_rejected() {
+    let missing_header = Request::builder()
+        .uri("/status")
+        .body(Body::empty())
+        .unwrap();
+    let response = app().oneshot(missing_header).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+    let wrong_token = Request::builder()
+        .uri("/status")
+        .header(header::AUTHORIZATION, "Bearer not-the-real-key")
+        .body(Body::empty())
+        .unwrap();
+    let response = app().oneshot(wrong_token).await.unwrap();
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }

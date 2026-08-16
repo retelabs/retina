@@ -4,24 +4,25 @@
 //! consistency with the rest of this workspace, not because this crate
 //! needs it independently.
 //!
-//! No authentication yet, unlike `crates/kernel`/`crates/query-api`
-//! (docs/interfaces/kernel-auth.md) — deliberately deferred, not
-//! overlooked: this is a local learning tool bound to `127.0.0.1` by
-//! default (see `main.rs`), not something exposed on a real network yet.
-//! If this ever runs anywhere reachable, it needs the same treatment
-//! first — it can stop containers, that's a more sensitive surface than
-//! either kernel or query-api, not a lesser one.
+//! Authenticated the same way as `crates/kernel`/`crates/query-api`
+//! (docs/interfaces/kernel-auth.md) — `ORCHESTRATOR_API_KEY`, read and
+//! enforced fail-closed in `main.rs`. `ORCHESTRATOR_BIND` still defaults to
+//! `127.0.0.1` rather than `0.0.0.0` (see `main.rs`) — auth is a layer on
+//! top of that default, not a reason to widen it: this surface can stop
+//! containers, more sensitive than either kernel or query-api, not less.
 
 use std::sync::Arc;
 
 use axum::extract::State;
 use axum::http::StatusCode;
+use axum::middleware;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use bollard::Docker;
 use serde::Serialize;
 
+use crate::auth::{ExpectedBearer, require_api_key};
 use crate::docker_client::{self, ManagedService, OrchestratorError, ServiceStatus};
 
 #[derive(Clone)]
@@ -31,11 +32,19 @@ pub struct AppState {
     pub services: Arc<Vec<ManagedService>>,
 }
 
-pub fn build_app(state: AppState) -> Router {
+/// `api_key` gates all 3 routes below via `require_api_key`
+/// (docs/interfaces/kernel-auth.md) — `route_layer` rather than `layer` so
+/// it applies to the matched routes only, not to 404s on unknown paths
+/// (same reasoning as `crates/query-api/src/app.rs`).
+pub fn build_app(state: AppState, api_key: String) -> Router {
     Router::new()
         .route("/deploy", post(deploy))
         .route("/status", get(status))
         .route("/teardown", post(teardown))
+        .route_layer(middleware::from_fn_with_state(
+            ExpectedBearer::new(api_key),
+            require_api_key,
+        ))
         .with_state(state)
 }
 

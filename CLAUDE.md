@@ -462,7 +462,26 @@ requête `query-api` confirmant que l'image construite par notre propre code
 fonctionne réellement — plus seulement testé, le prérequis externe
 `scripts/dev-stack.sh build` a disparu pour de vrai.
 
-Pas encore fait : authentification sur `crates/orchestrator`, et le
+**Authentification sur `crates/orchestrator` — fait (2026-08-16).** Même
+mécanisme que `kernel`/`query-api` (`docs/interfaces/kernel-auth.md`) :
+`ORCHESTRATOR_API_KEY`, échec fermé au démarrage, header `authorization:
+Bearer <token>`. Décision délibérée : `src/auth.rs` dupliqué depuis
+`crates/query-api/src/auth.rs` plutôt que factorisé dans un crate partagé —
+deuxième service axum à en avoir besoin, pas un troisième, chaque crate
+reste auto-suffisant. `ORCHESTRATOR_BIND` reste par défaut sur `127.0.0.1` —
+l'authentification s'ajoute à cette prudence, ne la remplace pas.
+
+Vérifié à deux niveaux : `cargo test -p orchestrator -- --ignored`
+(nouveau test de rejet 401, test HTTP existant mis à jour avec le header)
+contre le vrai `Router` ; et bout en bout réel — lancé sans
+`ORCHESTRATOR_API_KEY` → panic avant toute connexion Docker, lancé avec →
+`curl` sans header confirmé `401`, avec le bon header un cycle
+`/deploy`→`/status`→`/teardown` complet, suivi d'un vrai rejeu gRPC
+(`fraudos-replay`) et d'une vraie requête `query-api` confirmant que la
+pile déployée derrière l'auth fonctionne réellement.
+
+Avec ceci, les deux lacunes de sécurité identifiées sur `crates/orchestrator`
+(pas d'auth, prérequis d'image externe) sont comblées. Pas encore fait : le
 deuxième chantier envisagé pour le même objectif d'apprentissage — une
 méthode de calcul de coût réel.
 

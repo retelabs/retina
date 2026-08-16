@@ -141,12 +141,15 @@ l'état — il manque un `docker build` préalable), `HealthTimeout` → 504,
 `Docker(_)` → 500. Distinguer ces cas plutôt que tout renvoyer en 500 évite
 à l'appelant de deviner quoi vérifier.
 
-**Pas d'authentification**, contrairement à `crates/kernel`/`crates/query-api`
-(`docs/interfaces/kernel-auth.md`) — délibérément différé, pas oublié : outil
-d'apprentissage local, `ORCHESTRATOR_BIND` par défaut sur `127.0.0.1`
-(pas `0.0.0.0` comme kernel/query-api). Si ce service tourne un jour sur un
-réseau atteignable, il lui faut le même traitement d'abord — il peut arrêter
-des conteneurs, une surface plus sensible que kernel ou query-api, pas moins.
+**Authentifié (2026-08-16)** : même mécanisme que `crates/kernel`/
+`crates/query-api` (`docs/interfaces/kernel-auth.md`) — `ORCHESTRATOR_API_KEY`,
+échec fermé au démarrage, header `authorization: Bearer <token>`, module
+`src/auth.rs` dupliqué depuis celui de `query-api` plutôt que factorisé
+(deuxième service axum à en avoir besoin, pas un troisième — voir
+`docs/interfaces/kernel-auth.md`). `ORCHESTRATOR_BIND` reste par défaut sur
+`127.0.0.1` (pas `0.0.0.0` comme kernel/query-api) — l'authentification
+s'ajoute à cette prudence, ne la remplace pas : cette surface peut arrêter
+des conteneurs, plus sensible que kernel ou query-api, pas moins.
 
 Vérifié à deux niveaux : `tower::ServiceExt::oneshot` contre le vrai
 `Router` (`crates/orchestrator/tests/api_integration.rs`, `--ignored`) —
@@ -207,7 +210,6 @@ que l'image construite par notre propre code fonctionne réellement.
 
 ## Pas encore fait
 
-- **Authentification** sur `crates/orchestrator` (voir plus haut).
 - **Modèle de coût** — deuxième chantier envisagé pour le même objectif
   d'apprentissage, pas commencé.
 

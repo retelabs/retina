@@ -1,0 +1,16 @@
+[package]
+name = "tui"
+version = "0.1.0"
+edition.workspace = true
+
+[[bin]]
+name = "venice-tui"
+path = "src/main.rs"
+
+[dependencies]
+crossterm = "0.29.0"
+query-api = { version = "0.1.0", path = "../query-api" }
+ratatui = "0.30.2"
+reqwest = { version = "0.13.4", features = ["json"] }
+serde = "1.0.229"
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros"] }

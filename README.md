@@ -19,3 +19,19 @@ scripts/demo.sh              # rejeu de scénarios réels + requêtes de bout en
 
 Kernel (OTLP/gRPC) : `localhost:4317`. Query API (HTTP) : `localhost:8080`.
 Les deux exigent un jeton (`docs/client-integration.md#envoyer-de-la-télémétrie`).
+
+## Interface terminal (`crates/tui`)
+
+Miroir strict des 3 endpoints `query-api` — traces récentes, détail d'une
+trace (arbre de spans reconstruit côté client), résumé des métriques
+(tokens/coût/warnings). Pas de nouveau endpoint, juste une interface sur ce
+qui existe déjà.
+
+```bash
+QUERY_API_URL=http://localhost:8080 QUERY_API_KEY=<votre jeton> \
+  cargo run -p tui
+```
+
+Navigation : `Tab` change de vue, `↑`/`↓` (ou `j`/`k`) sélectionne une
+trace, `Entrée` ouvre son détail, `r` rafraîchit la vue courante, `Échap`
+revient à la liste, `q` quitte.

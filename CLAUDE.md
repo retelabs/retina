@@ -701,6 +701,63 @@ mieux qu'un worker centralisé : zéro couplage Venice à un fournisseur LLM
 ou un format par client. Détail complet dans
 `docs/interfaces/triage-eval-plugin.md`.
 
+## Renommage en Venice (2026-08-17)
+
+Nom définitif choisi avec l'utilisateur avant le chantier cloud : Venice —
+ville connue pour ses canaux, cohérente avec l'architecture réelle du
+kernel (pipeline principal + plugins qui se greffent dessus sans le
+bloquer, comme un réseau de canaux interconnectés plutôt qu'un canal
+unique). Logo retenu après comparaison de deux propositions
+(`UI/assets/logos/logo_venice_v{1,2}.png`) : v1, dont le canal principal
+dessine un V — silhouette plus nette à petite taille (favicon) que le S de
+v2, qui référence pourtant plus fidèlement le tracé du Grand Canal.
+
+Portée du renommage : tous les identifiants fonctionnels (conteneurs/
+réseau/images Docker dans `crates/orchestrator`, container ClickHouse dev)
+et toute la prose (`CLAUDE.md`, `README.md`, `docs/`). Aucun crate n'était
+nommé "trellis" littéralement, pas de renommage de package Cargo
+nécessaire. **Volontairement pas fait** : renommage du repo GitLab
+(casserait le remote `origin` que la session the-client utilise déjà) et du
+répertoire local — reportés avec l'accord explicite de l'utilisateur, notés
+en mémoire pour ne pas être oubliés d'une session à l'autre.
+
+## Interface terminal (`crates/tui`) — fait (2026-08-17)
+
+Avant le chantier cloud : un front demandé par l'utilisateur, tranché en
+TUI plutôt qu'une SPA web (pas de nouveau toolchain JS/Node à construire
+juste avant le déploiement) ou du Rust/WASM (pas de bénéfice d'apprentissage
+"infra" ici, contrairement à `crates/orchestrator` — un choix de framework
+front, pas un concept système). `ratatui` 0.30.2 + `crossterm` 0.29.0,
+versions réelles résolues via `cargo search`/`cargo info`, pas devinées.
+
+Périmètre v1 tranché avec l'utilisateur : miroir strict des 3 endpoints
+`query-api`, rien de nouveau côté API. `crates/tui` réutilise directement
+`query_api::dto` (`SpanDto`/`TraceSummaryDto`/`MetricsSummaryDto`) en leur
+ajoutant `Deserialize` (+`PartialEq` sur `SpanDto` pour les tests) — une
+seule définition du format JSON partagée entre le serveur qui l'émet et le
+client qui le relit, pas une deuxième copie qui pourrait diverger.
+
+Reconstruction de l'arbre de spans faite côté client (`app::span_tree`),
+exactement comme `docs/interfaces/query-api.md` le prescrit déjà pour tout
+consommateur de `GET /traces/{trace_id}` (liste plate, pas un JSON
+imbriqué) — gérée avec garde anti-cycle (spans visités trackés) plutôt que
+de faire confiance à la forme des données, même prudence que le serveur qui
+ne valide pas non plus un arbre à racine unique.
+
+Vérifié à trois niveaux : 5 tests unitaires (`span_tree`/`humanize_ago`,
+y compris un cas de cycle à 2 nœuds et une référence de parent hors trace)
+sans terminal ; 4 tests d'intégration `--ignored` contre le vrai
+`query-api` déjà en service avec de vraies données the-client (5 traces, 3
+kinds, 7 `spans_with_warnings` — mêmes chiffres que la vérification the-client
+plus tôt dans la session) ; et un vrai lancement du binaire dans un
+pseudo-terminal (module `pty` Python, pas de terminal réel disponible pour
+l'outil) confirmant un cycle démarrage/arrêt propre (séquences ANSI
+d'entrée/sortie d'écran alternatif correctement appariées, code de sortie
+0 sur `q`). **Limite assumée** : la mise en page/le rendu visuel réel n'a
+pas pu être vérifié à l'œil — un TUI ne se "screenshot" pas facilement par
+l'outil, contrairement à une UI web ; à confirmer par l'utilisateur en le
+lançant réellement.
+
 ## Repères techniques
 
 - Ingestion OTLP : `tonic` + `prost`.

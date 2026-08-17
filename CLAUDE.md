@@ -645,6 +645,41 @@ réel de bout en bout depuis un vrai appel client, pas seulement un span
 synthétique — clôt le chantier ouvert en début de journée (l'écart constaté
 avec LangSmith).
 
+**Évals sans LangSmith — volet 1 (déterministe) fait, volet 2 en attente
+(2026-08-17).** Deuxième manque identifié par l'utilisateur the-client face à
+LangSmith : des évals dans le même esprit déterministe que `MedicalPlugin`
+plutôt que le pattern LLM-as-judge de LangSmith — argument économique
+explicite (des boucles d'eval en CI avec juge LLM répété coûtent cher à
+chaque run, maximiser le déterministe réduit ce coût directement).
+
+Cas réels demandés et reçus de the-client (pas inventés) pour les 3 agents
+(triage/summary/compliance) avant de designer quoi que ce soit — un seul
+avait un référentiel canonique comparable à une sortie catégorielle
+(`crates/plugin-triage-eval`, détail complet et sources dans
+`docs/interfaces/triage-eval-plugin.md`) : le prompt de triage a un
+vocabulaire ouvert ("for example: ..."), mais le vrai référentiel
+`Service` que the-client utilise ailleurs n'a que 6 valeurs — dérive déjà
+confirmée dans leurs données de seed (`biologie`/`neurologie` sans
+`Service` correspondant). Summary/compliance restent de la prose libre,
+sans équivalent déterministe.
+
+`TriageEvalPlugin` (même substrat que `MedicalPlugin` : lit un attribut,
+applique une règle, écrit attributs/warnings) pose `eval.triage.tag_known`
+à partir de `oncology.triage.tag`, comparé (normalisé comme the-client le fait
+déjà) à un référentiel configurable (`TRIAGE_KNOWN_SERVICES`, défaut = les
+6 vraies valeurs the-client — pas une liste vide, qui ferait échouer tous les
+tags). Câblé dans `crates/kernel` comme les deux autres plugins
+(`ENABLED_PLUGINS`). 7 + 2 tests unitaires. **Pas encore vérifié en
+conditions réelles** : bloqué sur `oncology.triage.tag`, pas encore émis
+côté the-client — prochaine étape.
+
+**Volet 2 (juge sémantique pour summary/compliance) volontairement pas
+attaqué** : un juge LLM ne rentre pas dans le contrat de plugin actuel
+(synchrone, sans I/O, borné à 100ms dans `crates/plugin-sink`) — où et
+quand il tournerait est une vraie question d'architecture, pas tranchée
+unilatéralement, mise en attente le temps d'une décision explicite avec
+l'utilisateur.
+
 ## Repères techniques
 
 - Ingestion OTLP : `tonic` + `prost`.

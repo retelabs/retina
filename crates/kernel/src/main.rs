@@ -26,6 +26,7 @@ use plugin_api::Plugin;
 use plugin_fraudos::FraudosPlugin;
 use plugin_medical::MedicalPlugin;
 use plugin_sink::PluginSink;
+use plugin_triage_eval::{DEFAULT_KNOWN_SERVICES, TriageEvalPlugin};
 use tonic::transport::Server;
 
 fn env_or(key: &str, default: &str) -> String {
@@ -69,10 +70,33 @@ fn select_enabled<T>(available: Vec<(&'static str, T)>, requested: Option<&str>)
         .collect()
 }
 
+/// `TRIAGE_KNOWN_SERVICES`: comma-separated vocabulary override for
+/// `TriageEvalPlugin` (docs/interfaces/triage-eval-plugin.md) — `None` means
+/// "use the-client's real current `Service` list" (`DEFAULT_KNOWN_SERVICES`), not
+/// "disable the check" (an empty effective vocabulary would flag every tag
+/// as unknown, which is worse than just using real data as the default).
+/// Takes `Option<&str>` rather than reading the env var itself — same shape
+/// as `select_enabled`, testable without mutating global process state.
+fn triage_known_services(requested: Option<&str>) -> Vec<String> {
+    match requested {
+        Some(config) => config.split(',').map(|s| s.trim().to_string()).collect(),
+        None => DEFAULT_KNOWN_SERVICES
+            .iter()
+            .map(|s| s.to_string())
+            .collect(),
+    }
+}
+
 fn build_plugins() -> Vec<Box<dyn Plugin>> {
+    let known_services =
+        triage_known_services(std::env::var("TRIAGE_KNOWN_SERVICES").ok().as_deref());
     let available: Vec<(&'static str, Box<dyn Plugin>)> = vec![
         ("fraudos-plugin", Box::new(FraudosPlugin)),
         ("medical-plugin", Box::new(MedicalPlugin)),
+        (
+            "triage-eval-plugin",
+            Box::new(TriageEvalPlugin::new(known_services)),
+        ),
     ];
     let requested = std::env::var("ENABLED_PLUGINS").ok();
     select_enabled(available, requested.as_deref())
@@ -133,6 +157,24 @@ mod tests {
     fn unset_enables_everything() {
         let result = select_enabled(sample(), None);
         assert_eq!(result, vec!["fraudos", "medical"]);
+    }
+
+    #[test]
+    fn triage_known_services_defaults_to_the_clients_real_service_list_when_unset() {
+        let result = triage_known_services(None);
+        assert_eq!(
+            result,
+            DEFAULT_KNOWN_SERVICES
+                .iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn triage_known_services_splits_and_trims_an_override() {
+        let result = triage_known_services(Some(" Cardiologie , Pédiatrie "));
+        assert_eq!(result, vec!["Cardiologie", "Pédiatrie"]);
     }
 
     #[test]

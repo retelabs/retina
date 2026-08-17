@@ -1127,6 +1127,7 @@ dependencies = [
  "plugin-fraudos",
  "plugin-medical",
  "plugin-sink",
+ "plugin-triage-eval",
  "tokio",
  "tonic",
 ]
@@ -1414,6 +1415,14 @@ dependencies = [
  "plugin-fraudos",
  "plugin-medical",
  "tokio",
+]
+
+[[package]]
+name = "plugin-triage-eval"
+version = "0.1.0"
+dependencies = [
+ "kernel-model",
+ "plugin-api",
 ]
 
 [[package]]

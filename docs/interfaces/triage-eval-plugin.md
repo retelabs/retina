@@ -74,19 +74,36 @@ recompiler le kernel — un choix différent de `MedicalPlugin` (liste de
 champs figée), justifié parce qu'un vocabulaire métier dérive dans le temps
 alors qu'un schéma de gouvernance HIPAA/GDPR ne bouge pas au même rythme.
 
-## Volet 2 (jugement sémantique summary/compliance) — question ouverte, pas attaquée ici
+## Volet 2 (jugement sémantique summary/compliance) — tranché, pas de code côté trellis
 
-`docs/interfaces/plugin-contract-v0.md` : un plugin est synchrone, sans
-I/O, borné à un timeout court (`crates/plugin-sink`, `spawn_blocking` +
-100ms — généreux pour une règle sur des attributs, pas pour un appel
-réseau). Un juge LLM (`summary` fidèle au transcript ? `compliance` audit
-correct ?) prend des secondes et fait du réseau — incompatible avec ce
-contrat tel quel. Où et quand ce jugement tournerait (à l'ingestion en
-async détaché du chemin critique, en tâche batch séparée hors kernel, à la
-demande via un futur endpoint `query-api`) reste à trancher avec
-l'utilisateur avant tout code — décision à impact architecture
-significatif, pas prise unilatéralement ici (même posture que le choix
-cloud/multi-tenant, CLAUDE.md).
+Décision prise avec l'utilisateur (2026-08-17), après une première piste
+écartée : un binaire séparé (`eval-worker`) qui irait relire les
+transcripts/sorties d'agent dans ClickHouse pour appeler un juge LLM a été
+envisagé, puis rejeté — `docs/interfaces/clickhouse-schema.md` établit déjà
+que les attributs potentiellement sensibles sont **opt-in, désactivés par
+défaut**, précisément pour ne pas stocker de donnée patient en clair dans
+trellis. Le cas réel `ComplianceAgent` (nom, date de naissance, numéro de
+sécu, statut VIH) rendrait ce risque concret, pas théorique, si le texte
+source transitait par trellis pour être jugé.
+
+**Décision retenue** : le juge sémantique tourne **côté client** (the-client, ou
+tout futur client), avec son propre texte, sa propre clé API, son propre
+budget — jamais transmis à trellis. Seul le **verdict structuré** est
+posté comme attribut sur le span `invoke_agent`, namespace `eval.*` (même
+que `eval.triage.tag_known` ci-dessus), valeur typée (bool/int/float),
+jamais de texte libre en sortie de verdict — cohérent avec pourquoi
+`ComplianceAgent` lui-même n'a pas de gate structuré aujourd'hui (dossier
+`oncology-governance.md`) : un verdict en prose n'est pas interrogeable,
+un verdict structuré l'est.
+
+**Conséquence** : aucun nouveau crate/table/migration/clé API côté trellis
+pour ce volet — `extra_attributes` (`Map(String, String)`, déjà générique)
+absorbe `eval.summary.*`/`eval.compliance.*` exactement comme `oncology.*`
+aujourd'hui. Généralise mieux qu'un `eval-worker` centralisé : pas de
+couplage trellis à un fournisseur LLM ou un format de texte par client,
+cohérent avec le mono-tenant actuel (ADR-0001) plutôt que d'ajouter une
+responsabilité multi-client. Convention à communiquer à chaque client qui
+veut l'utiliser, pas un contrat à faire évoluer côté kernel.
 
 ## Vérifié
 

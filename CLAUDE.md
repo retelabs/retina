@@ -682,12 +682,24 @@ matche aucun des 6 `Service` connus). Résultat exact : `eval.triage.tag_known
 proprement avec le warning HITL déjà présent sur le même span. Détecté du
 premier coup, sans ajustement après coup.
 
-**Volet 2 (juge sémantique pour summary/compliance) volontairement pas
-attaqué** : un juge LLM ne rentre pas dans le contrat de plugin actuel
-(synchrone, sans I/O, borné à 100ms dans `crates/plugin-sink`) — où et
-quand il tournerait est une vraie question d'architecture, pas tranchée
-unilatéralement, mise en attente le temps d'une décision explicite avec
-l'utilisateur.
+**Volet 2 (juge sémantique summary/compliance) — tranché, sans code côté
+trellis.** Un juge LLM ne rentre pas dans le contrat de plugin actuel
+(synchrone, sans I/O, borné à 100ms dans `crates/plugin-sink`) — première
+piste envisagée avec l'utilisateur, un binaire séparé (`eval-worker`)
+relisant transcripts/sorties dans ClickHouse, **écartée** : irait à
+l'encontre de la politique PII déjà posée (`docs/interfaces/clickhouse-schema.md`,
+attributs sensibles opt-in/désactivés par défaut) — le cas réel
+`ComplianceAgent` traite nom/date de naissance/NIR/statut VIH en clair,
+faire transiter et stocker ce texte dans trellis (même 90 jours de
+rétention) aurait été un vrai risque de conformité, pas théorique.
+**Décision retenue** : le jugement tourne côté client (the-client ou tout futur
+client), avec son propre texte/sa propre clé API, jamais transmis à
+trellis — seul le verdict structuré (`eval.summary.*`/`eval.compliance.*`,
+typé, jamais de texte libre) est posté en attribut, absorbé par
+`extra_attributes` exactement comme `oncology.*` aujourd'hui. Généralise
+mieux qu'un worker centralisé : zéro couplage trellis à un fournisseur LLM
+ou un format par client. Détail complet dans
+`docs/interfaces/triage-eval-plugin.md`.
 
 ## Repères techniques
 

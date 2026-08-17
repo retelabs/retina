@@ -978,6 +978,18 @@ Traces → Detail → Metrics → Help → page 2, aucun texte français restant
 dans l'app (`grep` sur les caractères accentués dans `crates/tui/src/`,
 zéro résultat).
 
+**Deux pages "référence" ajoutées** ("plus des commandes ou un glossaire,
+un peu comme un man") : `content::pages()` passe de 3 à 5 —
+**Commands** (raccourcis clavier réels, style `man` NAVIGATION/ACTIONS,
+deux colonnes alignées via un nouvel helper `kv()`) et **Glossary**
+(vocabulaire de l'app : `trace`/`span`/`agent_run`/`model_call`/
+`tool_call`/`cost_usd`/`warning`). Contenu des raccourcis vérifié contre
+les vrais bindings de `main.rs::run()`, pas inventé — `q`/`Esc` a un
+comportement contextuel réel (Esc revient à Traces depuis Detail, quitte
+ailleurs) documenté tel quel plutôt que simplifié à tort. Vérifié
+visuellement via pseudo-terminal + `pyte` : les deux pages s'affichent
+correctement alignées, compteur 4/5 et 5/5 corrects.
+
 ## Repères techniques
 
 - Ingestion OTLP : `tonic` + `prost`.

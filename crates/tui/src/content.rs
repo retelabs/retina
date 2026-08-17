@@ -26,6 +26,20 @@ fn heading(text: &'static str) -> Line<'static> {
     ))
 }
 
+/// A `man`-style two-column entry: bold key, left-padded, plain
+/// description — built as an owned `String` (not `&'static str`) since the
+/// padding width depends on the longest key in its table, computed once in
+/// `pages()` rather than hand-aligned per line.
+fn kv(key: &str, key_width: usize, desc: &str) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(
+            format!("  {key:<key_width$}"),
+            Style::default().add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(desc.to_string()),
+    ])
+}
+
 pub fn pages() -> Vec<Page> {
     vec![
         Page {
@@ -77,6 +91,50 @@ pub fn pages() -> Vec<Page> {
                 Line::default(),
                 line("This page is always one Tab away — look for \"Help\"."),
             ],
+        },
+        Page {
+            title: "Commands",
+            body: {
+                let w = 12;
+                vec![
+                    heading("NAVIGATION"),
+                    kv("Tab", w, "switch view (Traces / Detail / Metrics / Help)"),
+                    kv("↑/↓ k/j", w, "move selection (Traces view)"),
+                    kv("←/→", w, "previous / next page (Help view)"),
+                    kv("Enter", w, "open trace detail (Traces) · continue (intro)"),
+                    kv("Esc", w, "back to Traces (Detail) · quit (elsewhere)"),
+                    kv("q", w, "quit"),
+                    Line::default(),
+                    heading("ACTIONS"),
+                    kv("r", w, "refresh the current view"),
+                ]
+            },
+        },
+        Page {
+            title: "Glossary",
+            body: {
+                let w = 16;
+                vec![
+                    kv(
+                        "trace",
+                        w,
+                        "a group of spans sharing one trace_id — one run",
+                    ),
+                    kv("span", w, "one recorded unit of work"),
+                    kv("agent_run", w, "a span for one LLM agent invocation"),
+                    kv("model_call", w, "a span for one call to a model / provider"),
+                    kv("tool_call", w, "a span for one tool call made by an agent"),
+                    Line::default(),
+                    kv(
+                        "cost_usd",
+                        w,
+                        "computed $ cost from token usage and pricing —",
+                    ),
+                    line("              null if the model isn't priced yet"),
+                    kv("warning", w, "a signal a plugin attached to a span, worth"),
+                    line("              investigating (see the Metrics summary)"),
+                ]
+            },
         },
     ]
 }

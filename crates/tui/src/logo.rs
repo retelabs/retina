@@ -1,18 +1,16 @@
 //! Loads the real logo (`UI/assets/logos/logo_venice_v1.png`) and encodes
 //! it for the terminal via `ratatui-image`.
 //!
-//! **Protocol: queried from the real terminal, not forced to half-blocks.**
-//! Checked against the crate's actual source (`picker.rs`), not assumed:
-//! Sixel/Kitty/iTerm2 support is compiled in unconditionally — `chafa` (the
-//! system dependency this crate deliberately avoids, see Cargo.toml) gates
-//! something else entirely, not protocol availability. `Picker::from_query_stdio`
-//! sends real capability-query escape sequences and reads the terminal's
-//! response, picking whichever protocol it actually supports (near
-//! pixel-accurate on Kitty/WezTerm/iTerm2/Sixel-capable terminals) and
-//! falling back to half-blocks only when nothing better answers. Must run
-//! after entering the alternate screen but before reading terminal events
-//! (the crate's own doc comment on that function) — matches where
-//! `main.rs` calls this, right after `ratatui::init()`.
+//! **Protocol: half-blocks, forced explicitly (see `picker()` below).**
+//! Sixel/Kitty/iTerm2 support is compiled into the crate unconditionally —
+//! `chafa` (the system dependency this project deliberately avoids, see
+//! Cargo.toml) gates something else entirely, not protocol availability —
+//! so auto-detecting via `Picker::from_query_stdio()` was tried first. Real
+//! regression, not a guess: VS Code's integrated terminal (this project's
+//! actual dev environment) answers that capability query in a way that
+//! made it pick a graphics protocol it doesn't actually render, so nothing
+//! showed at all. Forced back to half-blocks, the one config actually
+//! verified working here.
 //!
 //! Embedded via `include_bytes!` rather than read from a runtime path: the
 //! binary should show the logo regardless of the current working directory
@@ -61,6 +59,37 @@ fn crop_to_content(image: &DynamicImage) -> DynamicImage {
     image.crop_imm(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1)
 }
 
+/// Near-black, close to VS Code's default dark theme background (`#1e1e1e`)
+/// and most other terminal dark themes — picked as a reasonable single
+/// default rather than trying to detect the real one.
+const DARK_BACKGROUND: [u8; 4] = [30, 30, 30, 255];
+
+/// Replaces the PNG's opaque white background with a dark neutral color.
+///
+/// **Real constraint found by reading the encoder's actual source**
+/// (`ratatui-image`'s `halfblocks/primitive.rs`, not chafa — that's not
+/// linked here): half-blocks always calls `img.to_rgb8()`, which discards
+/// alpha entirely. There is no way to make the background transparent and
+/// let the terminal's own background show through in this mode — every
+/// cell is always painted with an opaque color. Recoloring the background
+/// pixels themselves, rather than trying to make them transparent, is the
+/// only lever that actually exists here.
+fn darken_background(image: &DynamicImage) -> DynamicImage {
+    let background = image.get_pixel(0, 0);
+    let mut rgba = image.to_rgba8();
+    for pixel in rgba.pixels_mut() {
+        let close_to_background = pixel
+            .0
+            .iter()
+            .zip(background.0.iter())
+            .all(|(a, b)| a.abs_diff(*b) <= 10);
+        if close_to_background {
+            *pixel = Rgba(DARK_BACKGROUND);
+        }
+    }
+    DynamicImage::ImageRgba8(rgba)
+}
+
 /// The encoded protocol plus the terminal-cell size it was encoded at —
 /// `ui.rs` needs the size to center the image's `Rect` itself
 /// (`Resize::Fit` scales *within* whatever area it's given, it doesn't
@@ -77,10 +106,10 @@ pub struct Logo {
 const CAPTION_ROWS: u16 = 5;
 
 /// Picks a target size, in terminal cells, that actually fits — capped at
-/// a reasonable maximum (40×20) *and* at what the real terminal has room
-/// for once the caption below it is accounted for. Deliberately not the
-/// image's native pixel-to-cell mapping: the source PNG is 1254×1254px,
-/// which maps to ~126×63 cells at a typical font size.
+/// a reasonable maximum *and* at what the real terminal has room for once
+/// the caption below it is accounted for. Deliberately not the image's
+/// native pixel-to-cell mapping: the source PNG is 1254×1254px, which maps
+/// to ~126×63 cells at a typical font size.
 ///
 /// **Real bug hit while building this** (confirmed via a debug print, not
 /// guessed, then reproduced deliberately at 80×24 — the most common
@@ -89,9 +118,15 @@ const CAPTION_ROWS: u16 = 5;
 /// all rather than something too big. `Resize::Fit` only scales *down*
 /// into whatever target it's given — it can't rescue an unfit target after
 /// the fact, so the target has to be right the first time.
+///
+/// Max raised from 40×20 to 64×32 after real feedback ("blurry/pixelated")
+/// on a terminal window much larger than 80×24 — half-blocks resolution is
+/// fundamentally capped by cell count (`primitive.rs`: 2 vertical "pixels"
+/// per cell, no chafa dithering linked in), so a bigger cell budget is the
+/// only lever that actually sharpens it on a terminal with room to spare.
 fn target_size(available: Size) -> Size {
     let usable_height = available.height.saturating_sub(CAPTION_ROWS + 1);
-    let height = usable_height.clamp(4, 20);
+    let height = usable_height.clamp(4, 32);
     // The logo is square (1254×1254px) and a terminal cell is roughly
     // twice as tall as it is wide, so width ≈ 2 × height keeps it visually
     // square — still capped by the terminal's actual width.
@@ -99,17 +134,35 @@ fn target_size(available: Size) -> Size {
     Size::new(width, height)
 }
 
+/// Forced back to `Picker::halfblocks()` after a real regression, not a
+/// guess: `Picker::from_query_stdio()` (tried first) picks whichever
+/// protocol the terminal's capability-query response implies, but VS
+/// Code's integrated terminal (xterm.js) answers those queries in a way
+/// that made it choose a graphics protocol (Sixel/Kitty) it doesn't
+/// actually render — nothing appeared at all, worse than the resolution
+/// half-blocks gives, instead of the intended graceful fallback. Since VS
+/// Code's integrated terminal is this project's actual dev environment,
+/// reliability here wins over chasing better fidelity on terminals that
+/// happen to answer the query correctly. `PICKER_QUERY_TERMINAL=1` opts
+/// back into auto-detection for testing on a terminal that's confirmed to
+/// support Kitty/Sixel outside VS Code.
+fn picker() -> Picker {
+    if std::env::var("PICKER_QUERY_TERMINAL").is_ok()
+        && let Ok(picker) = Picker::from_query_stdio()
+    {
+        return picker;
+    }
+    Picker::halfblocks()
+}
+
 /// `None` on any failure (decode error, unexpected font metrics) — the
 /// splash screen falls back to the computed ASCII badge rather than
 /// crashing the whole TUI over a logo that failed to load.
-///
-/// Must be called after `ratatui::init()` but before the event loop starts
-/// reading input — `Picker::from_query_stdio` briefly reads stdin itself
-/// to parse the terminal's capability response.
 pub fn load(available: Size) -> Option<Logo> {
-    let picker = Picker::from_query_stdio().unwrap_or_else(|_| Picker::halfblocks());
+    let picker = picker();
     let image = image::load_from_memory(LOGO_PNG).ok()?;
     let image = crop_to_content(&image);
+    let image = darken_background(&image);
     let target = target_size(available);
     let protocol = picker.new_protocol(image, target, Resize::Fit(None)).ok()?;
     Some(Logo {
@@ -165,8 +218,16 @@ mod tests {
     #[test]
     fn caps_at_a_reasonable_maximum_on_a_huge_terminal() {
         let size = target_size(Size::new(300, 150));
-        assert!(size.height <= 20);
-        assert!(size.width <= 40);
+        assert!(size.height <= 32);
+        assert!(size.width <= 64);
+    }
+
+    #[test]
+    fn darken_background_replaces_background_pixels_only() {
+        let darkened = darken_background(&image_with_margin());
+        assert_eq!(darkened.get_pixel(0, 0).0, DARK_BACKGROUND);
+        // The red square (real content) must survive untouched.
+        assert_eq!(darkened.get_pixel(9, 9).0, [255, 0, 0, 255]);
     }
 
     #[test]

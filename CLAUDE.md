@@ -855,15 +855,52 @@ représente du vrai détail plutôt que du blanc — surtout sensible en
 half-blocks. 2 tests unitaires sur une image synthétique (pas l'asset réel,
 pour ne pas dépendre de ses dimensions).
 
-**Limite de vérification honnête** : impossible de vérifier ici le rendu
-Kitty/Sixel réel — aucun terminal capable de ces protocoles n'est
-disponible dans cet environnement de test (le pseudo-terminal Python
-`pyte` ne les implémente pas complètement ; un artefact de texte visible
-lié à la requête de capacité Kitty est apparu dans ce test synthétique,
-probablement une limite de `pyte` plutôt qu'un vrai bug, mais pas confirmé
-sur un vrai terminal). Le repli half-blocks (toujours vérifiable) reste
-correct et amélioré par le recadrage. À confirmer par l'utilisateur sur
-son propre terminal, en particulier s'il utilise Kitty/WezTerm/iTerm2.
+**Limite de vérification honnête, devenue une vraie régression** :
+l'artefact de texte visible vu dans le test synthétique `pyte` n'était pas
+une limite de l'outil de test — l'utilisateur a confirmé en conditions
+réelles (terminal intégré VS Code, l'environnement de dev réel de ce
+projet) : "Venice s'affiche sans image". `Picker::from_query_stdio()`
+choisit un protocole graphique (Sixel/Kitty) selon la réponse de VS Code à
+la requête de capacité, mais VS Code ne rend en réalité pas ce protocole
+— rien ne s'affiche, pire que le repli half-blocks prévu.
+
+**Revenu à `Picker::halfblocks()` forcé** (`logo::picker()`), la seule
+config effectivement vérifiée fonctionner ici. `PICKER_QUERY_TERMINAL=1`
+réactive l'auto-détection pour tester plus tard sur un vrai terminal
+Kitty/WezTerm/iTerm2 hors VS Code, sans la forcer par défaut dans
+l'environnement de dev réel de ce projet. Le recadrage
+(`crop_to_content`) reste actif et profite au half-blocks. Revérifié à
+80×24 après ce retour arrière : l'image s'affiche correctement, sans
+artefact.
+
+**Sixième retour, avec capture d'écran réelle** ("fond blanc, effet
+pixelisé flou") : l'image s'affichait bien (dans un vrai GNOME Terminal,
+hors VS Code cette fois) mais avec un fond blanc plat et une résolution
+visiblement trop basse pour la taille réelle de la fenêtre. Deux causes
+distinctes, chacune vérifiée en lisant le vrai code source de l'encodeur
+half-blocks (`ratatui-image`, `halfblocks/primitive.rs`) avant de corriger :
+
+1. **Le fond blanc n'est pas contournable par la transparence.** L'encodeur
+   sans chafa appelle toujours `img.to_rgb8()` — l'alpha est totalement
+   ignoré, chaque cellule est peinte avec une couleur opaque, quoi qu'il
+   arrive. Impossible de laisser transparaître le fond réel du terminal
+   dans ce mode. `logo::darken_background` recolore les pixels proches du
+   blanc du PNG source en une teinte sombre neutre (`#1e1e1e`, proche du
+   thème sombre par défaut de VS Code et de la plupart des thèmes de
+   terminal) — un contournement assumé, pas une vraie transparence, mais
+   la seule option qui existe avec ce mode de rendu.
+2. **La résolution était plafonnée à 40×20 sans lien avec la vraie taille
+   du terminal de l'utilisateur** (bien plus grand dans son cas réel).
+   Plafond relevé à 64×32 — le half-blocks reste fondamentalement limité
+   par le nombre de cellules (2 "pixels" verticaux par cellule, pas de
+   dithering chafa), donc un budget de cellules plus généreux est le seul
+   levier qui affine réellement le rendu sur un terminal qui a la place.
+
+Vérifié visuellement sur une grande fenêtre simulée (160×55) : nettement
+plus de détail visible, couleurs échantillonnées confirmant un fond
+sombre (aucun blanc pur), pas de régression sur le cas 80×24. 2 nouveaux
+tests unitaires (`caps_at_a_reasonable_maximum_on_a_huge_terminal` mis à
+jour pour les nouveaux plafonds, `darken_background_replaces_background_pixels_only`).
 
 ## Repères techniques
 

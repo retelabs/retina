@@ -55,9 +55,13 @@ const SPLASH_DURATION: std::time::Duration = std::time::Duration::from_millis(40
 async fn show_splash(
     terminal: &mut ratatui::DefaultTerminal,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // `None` if decoding/encoding the real logo failed for any reason —
+    // draw_splash falls back to the computed ASCII badge rather than the
+    // whole TUI refusing to start over a missing image.
+    let logo = tui::logo::load();
     let start = std::time::Instant::now();
     loop {
-        terminal.draw(ui::draw_splash)?;
+        terminal.draw(|frame| ui::draw_splash(frame, logo.as_ref()))?;
         if start.elapsed() >= SPLASH_DURATION {
             return Ok(());
         }

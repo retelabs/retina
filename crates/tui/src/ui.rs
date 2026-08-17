@@ -181,12 +181,9 @@ fn venice_badge_lines(height: u16) -> Vec<Line<'static>> {
     canvas.into_lines()
 }
 
-pub fn draw_splash(frame: &mut Frame) {
-    let area = frame.area();
-    let badge_height = area.height.saturating_sub(10).clamp(10, 18);
-    let mut lines = venice_badge_lines(badge_height);
-    lines.push(Line::default());
-    lines.push(
+fn splash_caption_lines() -> Vec<Line<'static>> {
+    vec![
+        Line::default(),
         Line::from(Span::styled(
             "V E N I C E",
             Style::default()
@@ -194,8 +191,6 @@ pub fn draw_splash(frame: &mut Frame) {
                 .add_modifier(Modifier::BOLD),
         ))
         .alignment(Alignment::Center),
-    );
-    lines.push(
         Line::from(Span::styled(
             "kernel d'observabilité agentique",
             Style::default()
@@ -203,27 +198,70 @@ pub fn draw_splash(frame: &mut Frame) {
                 .add_modifier(Modifier::ITALIC),
         ))
         .alignment(Alignment::Center),
-    );
-    lines.push(Line::default());
-    lines.push(
+        Line::default(),
         Line::from(Span::styled(
             "appuyez sur une touche pour continuer...",
             Style::default().fg(Color::DarkGray),
         ))
         .alignment(Alignment::Center),
-    );
+    ]
+}
 
-    let content_height = lines.len() as u16;
-    let vchunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Fill(1),
-            Constraint::Length(content_height),
-            Constraint::Fill(1),
-        ])
-        .split(area);
+/// Centers a `width × height` area inside `outer` — `Resize::Fit` scales
+/// the image to fit whatever `Rect` it's given, it doesn't center a
+/// smaller result inside a larger one, so that centering has to happen at
+/// the layout level instead.
+fn centered_rect(outer: Rect, width: u16, height: u16) -> Rect {
+    let width = width.min(outer.width);
+    let height = height.min(outer.height);
+    Rect {
+        x: outer.x + (outer.width.saturating_sub(width)) / 2,
+        y: outer.y + (outer.height.saturating_sub(height)) / 2,
+        width,
+        height,
+    }
+}
 
-    frame.render_widget(Paragraph::new(lines), vchunks[1]);
+/// `logo` is `None` when `crate::logo::load()` failed (decode error,
+/// unexpected font metrics) — falls back to the computed ASCII badge
+/// (`venice_badge_lines`) rather than showing a blank gap where the real
+/// image would have been.
+pub fn draw_splash(frame: &mut Frame, logo: Option<&crate::logo::Logo>) {
+    let area = frame.area();
+    let caption = splash_caption_lines();
+    let caption_height = caption.len() as u16;
+
+    match logo {
+        Some(logo) => {
+            let vchunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Fill(1),
+                    Constraint::Length(logo.cells.height),
+                    Constraint::Length(caption_height),
+                    Constraint::Fill(1),
+                ])
+                .split(area);
+            let image_area = centered_rect(vchunks[1], logo.cells.width, logo.cells.height);
+            frame.render_widget(ratatui_image::Image::new(&logo.protocol), image_area);
+            frame.render_widget(Paragraph::new(caption), vchunks[2]);
+        }
+        None => {
+            let badge_height = area.height.saturating_sub(10).clamp(10, 18);
+            let mut lines = venice_badge_lines(badge_height);
+            lines.extend(caption);
+            let content_height = lines.len() as u16;
+            let vchunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Fill(1),
+                    Constraint::Length(content_height),
+                    Constraint::Fill(1),
+                ])
+                .split(area);
+            frame.render_widget(Paragraph::new(lines), vchunks[1]);
+        }
+    }
 }
 
 pub fn draw(frame: &mut Frame, app: &App) {

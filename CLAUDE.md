@@ -782,6 +782,43 @@ pas juste le flux ANSI brut : le glyphe V symétrique et centré, les 3 vues
 avec bordures/tabs qui s'affichent correctement, les vraies traces/coûts/
 warnings the-client visibles à l'écran.
 
+**Troisième retour** ("y'a que ascii art ?") : question posée à
+l'utilisateur plutôt que tranchée seule — vrai choix technique
+(`ratatui-image` 11.0.6, vérifié réel via `cargo info`) entre rester en
+ASCII calculé, passer en half-blocks Unicode (l'image réelle, encodée en
+blocs de couleur, aucune dépendance système), ou les protocoles graphiques
+natifs (Kitty/iTerm2/Sixel, quasi pixel-parfait mais nécessite `chafa`
+— **vérifié absent de cette machine**, `pkg-config --exists chafa` échoue
+— cohérent avec le principe déjà appliqué ailleurs dans ce projet de zéro
+dépendance système à la compilation). Utilisateur a choisi half-blocks.
+
+`crates/tui/src/logo.rs` charge le vrai PNG (`include_bytes!`, pas un
+chemin runtime — le logo doit s'afficher peu importe le répertoire de
+lancement du binaire), encodé via `Picker::halfblocks()` forcé
+explicitement (pas d'auto-détection sixel/kitty/iterm2).
+`default-features = false` sur `ratatui-image` pour exclure `chafa-dyn`.
+
+**Vrai bug trouvé en vérifiant, pas juste en lisant la doc** : le mapping
+pixel-à-cellule natif de l'image (1254×1254px) donne ~126×63 cellules
+terminal — bien plus grand que la plupart des terminaux, ce qui effondrait
+silencieusement la zone de layout du splash à une hauteur nulle (rien ne
+s'affichait, ni l'image ni l'ASCII de repli). Diagnostiqué via un
+`eprintln!` temporaire capturé sur un canal stderr séparé du pty (le
+premier essai de debug, stderr mélangé au pty puis `terminate()` immédiat,
+n'a rien montré — le process n'avait pas eu le temps d'atteindre un point
+de flush). Corrigé en ciblant une taille d'affichage fixe et raisonnable
+(40×20 cellules) plutôt que la résolution native, `Resize::Fit` réduisant
+l'image dans cette cible plutôt que de tenter du 1:1 pixel-parfait.
+
+Repli en cascade si le chargement échoue à n'importe quelle étape
+(décodage, encodage) : `Option<Logo>` — `None` fait retomber sur le badge
+ASCII calculé plutôt que de faire planter tout le TUI pour un logo qui n'a
+pas pu charger.
+
+Vérifié visuellement (même méthode pseudo-terminal + `pyte`) : le vrai
+logo s'affiche, correctement dimensionné et centré, structure reconnaissable
+(anneau, V) une fois le bug de taille corrigé.
+
 ## Repères techniques
 
 - Ingestion OTLP : `tonic` + `prost`.

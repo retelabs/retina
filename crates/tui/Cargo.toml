@@ -9,8 +9,17 @@ path = "src/main.rs"
 
 [dependencies]
 crossterm = "0.29.0"
+image = "0.25.10"
 query-api = { version = "0.1.0", path = "../query-api" }
 ratatui = "0.30.2"
+# default-features off: skips `chafa-dyn` (needs `pkg-config` + a system
+# libchafa, not installed here) — halfblocks doesn't need it, keeping this
+# crate's "no system dependency to build" posture (docker/kernel.Dockerfile
+# comment, docs/interfaces/docker-engine-api.md).
+ratatui-image = { version = "11.0.6", default-features = false, features = [
+    "crossterm",
+    "image-defaults",
+] }
 reqwest = { version = "0.13.4", features = ["json"] }
 serde = "1.0.229"
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros"] }

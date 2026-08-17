@@ -833,6 +833,38 @@ unitaires (tient dans un 80×24, plafonne sur un très grand terminal, jamais
 de dimension nulle sur un très petit). Revérifié à 80×24 : le logo
 s'affiche correctement.
 
+**Cinquième retour** ("fond plat, effet pixelisé, image trop petite") :
+deux vrais leviers trouvés en lisant le vrai code source du crate
+(`picker.rs`), pas la doc résumée — `chafa` (déjà écarté) ne conditionne
+en réalité pas du tout le support Sixel/Kitty/iTerm2, ces protocoles sont
+compilés inconditionnellement. `Picker::halfblocks()` forcé explicitement
+remplacé par `Picker::from_query_stdio()` : interroge le vrai terminal
+(séquences d'échappement de capacité, lues sur stdin) et choisit le
+meilleur protocole qu'il supporte réellement — rendu quasi pixel-parfait
+sur Kitty/WezTerm/iTerm2/terminaux Sixel, repli sur half-blocks seulement
+si rien ne répond mieux. Doit tourner après `ratatui::init()` mais avant
+la boucle d'événements (contrainte documentée dans le crate lui-même,
+déjà respectée par l'emplacement d'appel dans `main.rs`).
+
+Deuxième levier, indépendant du protocole : la vraie image a une marge
+blanche mesurée (pas devinée, script Python dédié) — le contenu occupe
+les lignes ~97–1136 et colonnes ~109–1143 d'une toile 1254×1254, environ
+17% de bordure blanche de chaque côté. `logo::crop_to_content` recadre
+avant l'encodage, pour que le budget de cellules limité (`target_size`)
+représente du vrai détail plutôt que du blanc — surtout sensible en
+half-blocks. 2 tests unitaires sur une image synthétique (pas l'asset réel,
+pour ne pas dépendre de ses dimensions).
+
+**Limite de vérification honnête** : impossible de vérifier ici le rendu
+Kitty/Sixel réel — aucun terminal capable de ces protocoles n'est
+disponible dans cet environnement de test (le pseudo-terminal Python
+`pyte` ne les implémente pas complètement ; un artefact de texte visible
+lié à la requête de capacité Kitty est apparu dans ce test synthétique,
+probablement une limite de `pyte` plutôt qu'un vrai bug, mais pas confirmé
+sur un vrai terminal). Le repli half-blocks (toujours vérifiable) reste
+correct et amélioré par le recadrage. À confirmer par l'utilisateur sur
+son propre terminal, en particulier s'il utilise Kitty/WezTerm/iTerm2.
+
 ## Repères techniques
 
 - Ingestion OTLP : `tonic` + `prost`.

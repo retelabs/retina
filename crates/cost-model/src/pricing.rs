@@ -43,7 +43,7 @@ pub const BACKBLAZE_B2: ObjectStoragePricing = ObjectStoragePricing {
 /// Source : cloudflare.com/plans, vérifié 2026-08-16 — le CDN du plan
 /// gratuit n'est pas mesuré (pas de coût par requête), contrairement aux
 /// Workers (compute) qui eux le sont. C'est le seul des 3 ajouts hybrides
-/// du diagramme "Trellis Deployment" qui reste à 0€ à *tout* volume
+/// du diagramme "Venice Deployment" qui reste à 0€ à *tout* volume
 /// réaliste pour ce projet, pas seulement à volume zéro.
 pub const CDN_MONTHLY_EUR: f64 = 0.0;
 

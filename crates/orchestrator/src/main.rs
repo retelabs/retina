@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use bollard::Docker;
 use orchestrator::api::{AppState, build_app};
-use orchestrator::topology::{NETWORK, trellis_stack};
+use orchestrator::topology::{NETWORK, venice_stack};
 
 fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
@@ -41,7 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let state = AppState {
         docker: Arc::new(docker),
         network: NETWORK.to_string(),
-        services: Arc::new(trellis_stack()),
+        services: Arc::new(venice_stack()),
     };
     let app = build_app(state, api_key);
 

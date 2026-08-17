@@ -7,7 +7,7 @@ services:
     # (Le tag "lts" utilisé initialement n'existe plus sur le registre —
     # vérifié le 2026-08-14 via l'API Docker Hub avant de corriger.)
     image: clickhouse/clickhouse-server:latest
-    container_name: trellis-clickhouse-dev
+    container_name: venice-clickhouse-dev
     ports:
       - "8123:8123" # HTTP
       - "9000:9000" # native TCP

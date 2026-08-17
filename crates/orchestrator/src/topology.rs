@@ -1,6 +1,6 @@
-//! The trellis-specific deployment topology (ClickHouse + `kernel` +
+//! The venice-specific deployment topology (ClickHouse + `kernel` +
 //! `query-api`) — separate from `docker_client` (generic control-plane
-//! primitives, knows nothing about trellis) and from `api`/`main` (HTTP
+//! primitives, knows nothing about venice) and from `api`/`main` (HTTP
 //! wiring), so each stays about one thing.
 
 use std::path::PathBuf;
@@ -8,8 +8,8 @@ use std::time::Duration;
 
 use crate::docker_client::{HealthCheckSpec, ImageSource, ManagedService, PortSpec};
 
-pub const NETWORK: &str = "trellis-orchestrator-net";
-const CLICKHOUSE_NAME: &str = "trellis-orchestrator-clickhouse";
+pub const NETWORK: &str = "venice-orchestrator-net";
+const CLICKHOUSE_NAME: &str = "venice-orchestrator-clickhouse";
 
 /// `crates/orchestrator` -> repo root — the same build context
 /// `docker/docker-compose.stack.yml` uses (`context: ..` relative to
@@ -63,8 +63,8 @@ fn clickhouse_url() -> String {
 
 fn kernel_service() -> ManagedService {
     ManagedService {
-        name: "trellis-orchestrator-kernel".to_string(),
-        image: "trellis-kernel:latest".to_string(),
+        name: "venice-orchestrator-kernel".to_string(),
+        image: "venice-kernel:latest".to_string(),
         image_source: ImageSource::Build {
             context: repo_root(),
             dockerfile: "docker/kernel.Dockerfile".to_string(),
@@ -89,8 +89,8 @@ fn kernel_service() -> ManagedService {
 
 fn query_api_service() -> ManagedService {
     ManagedService {
-        name: "trellis-orchestrator-query-api".to_string(),
-        image: "trellis-query-api:latest".to_string(),
+        name: "venice-orchestrator-query-api".to_string(),
+        image: "venice-query-api:latest".to_string(),
         image_source: ImageSource::Build {
             context: repo_root(),
             dockerfile: "docker/query-api.Dockerfile".to_string(),
@@ -114,6 +114,6 @@ fn query_api_service() -> ManagedService {
 /// ClickHouse, then `kernel`/`query-api` (both `depends_on` it) — order in
 /// this `Vec` doesn't matter to `deploy_all` (it sorts by `depends_on`
 /// itself), written dependency-first here only for readability.
-pub fn trellis_stack() -> Vec<ManagedService> {
+pub fn venice_stack() -> Vec<ManagedService> {
     vec![clickhouse_service(), kernel_service(), query_api_service()]
 }

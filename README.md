@@ -1,11 +1,11 @@
-# trellis
+# Venice
 
 Kernel Rust d'observabilité (inspiré OTel/Datadog) pour workflows d'agents
 LLM, avec plugins métiers interprétant des invariants de gouvernance réels
 (fraude, conformité HIPAA/GDPR). Ingestion OTLP/gRPC standard — un vrai SDK
 OpenTelemetry suffit côté client, zéro code custom.
 
-- **Utiliser trellis depuis votre application** → [`docs/client-integration.md`](docs/client-integration.md)
+- **Utiliser Venice depuis votre application** → [`docs/client-integration.md`](docs/client-integration.md)
 - **Décisions produit et architecture** → [`dossier-observabilite-agentique.md`](dossier-observabilite-agentique.md)
 - **Contrats techniques vérifiés** (OTLP, ClickHouse, auth, plugins...) → [`docs/interfaces/`](docs/interfaces/)
 - **Déployer une instance** → `scripts/dev-stack.sh up`, ou `crates/orchestrator` (control plane maison avec une vraie API HTTP)

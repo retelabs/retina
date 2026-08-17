@@ -1,4 +1,4 @@
-//! Modèle de coût réel pour trellis — voir `docs/cost-model.md` pour les
+//! Modèle de coût réel pour venice — voir `docs/cost-model.md` pour les
 //! sources de prix et `src/main.rs` pour le contexte (deuxième chantier
 //! "apprentissage cloud", après `crates/orchestrator`).
 

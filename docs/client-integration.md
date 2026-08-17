@@ -1,6 +1,6 @@
 # Guide d'intégration client
 
-Ce guide s'adresse à qui veut **utiliser** trellis depuis une application
+Ce guide s'adresse à qui veut **utiliser** Venice depuis une application
 tierce — envoyer de la télémétrie, l'interroger — pas à qui développe le
 kernel lui-même. Pour le détail vérifié de chaque contrat (types exacts,
 comment chaque champ a été confirmé), voir `docs/interfaces/`, référencé

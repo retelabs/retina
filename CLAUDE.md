@@ -526,7 +526,7 @@ besoins dans le code du kernel MVP.
 Cartographie de l'état du projet avec l'utilisateur : aucun `README.md` à
 la racine n'existait, et `docs/interfaces/` documente des contrats vérifiés
 pour nous (source, date de vérification) — pas une doc orientée "comment
-utiliser trellis depuis mon application". `README.md` (racine, nouveau) et
+utiliser Venice depuis mon application". `README.md` (racine, nouveau) et
 `docs/client-integration.md` comblent ça : synthèse orientée client de
 contrats déjà vérifiés (mapping `gen_ai.operation.name` → événement kernel
 avec ses champs requis exacts, tiré du vrai code de dispatch
@@ -548,7 +548,7 @@ rétro-documentation, pas une nouvelle négociation.
 
 ## Premier client réel branché : client-project (the-client) (2026-08-17, en cours)
 
-Trellis sert désormais de kernel d'observabilité pour un vrai projet client
+Venice sert désormais de kernel d'observabilité pour un vrai projet client
 (`a separate client project`,
 SaaS santé .NET, agents triage/résumé/conformité/enrichissement d'appel,
 plugin `MedicalPlugin` branché temporairement dessus — le nom "oncology"
@@ -565,13 +565,13 @@ span `invoke_agent` pour les 4 agents ; seul l'enrichissement d'appel
 chemin — triage/résumé/conformité sont des endpoints "playground" texte
 libre (`RunAgentQuery`/`AiController`), sans identifiant de domaine.
 Fausse piste éliminée : `OutboxEntry.CorrelationId` existe dans leur modèle
-mais n'est jamais peuplé. **Décision côté the-client (leur équipe, pas trellis)**,
+mais n'est jamais peuplé. **Décision côté the-client (leur équipe, pas Venice)**,
 vérifiée contre leur frontend aussi (`AiComponent`, aucun `callId` sur ce
 chemin) : on laisse tel quel — construire le lien manquant serait une vraie
 feature de navigation, hors scope pour l'instant. Conséquence côté kernel :
 seul l'agent d'enrichissement d'appel portera jamais un `conversation_id`
 non-null pour the-client dans l'état actuel, pas une limite à corriger côté
-trellis.
+Venice.
 
 **Calculateur de coût $ — fait.** Trois questions scopées avec l'utilisateur
 avant de coder (`docs/interfaces/cost-calculation.md`, détail complet) :
@@ -683,21 +683,21 @@ proprement avec le warning HITL déjà présent sur le même span. Détecté du
 premier coup, sans ajustement après coup.
 
 **Volet 2 (juge sémantique summary/compliance) — tranché, sans code côté
-trellis.** Un juge LLM ne rentre pas dans le contrat de plugin actuel
+Venice.** Un juge LLM ne rentre pas dans le contrat de plugin actuel
 (synchrone, sans I/O, borné à 100ms dans `crates/plugin-sink`) — première
 piste envisagée avec l'utilisateur, un binaire séparé (`eval-worker`)
 relisant transcripts/sorties dans ClickHouse, **écartée** : irait à
 l'encontre de la politique PII déjà posée (`docs/interfaces/clickhouse-schema.md`,
 attributs sensibles opt-in/désactivés par défaut) — le cas réel
 `ComplianceAgent` traite nom/date de naissance/NIR/statut VIH en clair,
-faire transiter et stocker ce texte dans trellis (même 90 jours de
+faire transiter et stocker ce texte dans Venice (même 90 jours de
 rétention) aurait été un vrai risque de conformité, pas théorique.
 **Décision retenue** : le jugement tourne côté client (the-client ou tout futur
 client), avec son propre texte/sa propre clé API, jamais transmis à
-trellis — seul le verdict structuré (`eval.summary.*`/`eval.compliance.*`,
+Venice — seul le verdict structuré (`eval.summary.*`/`eval.compliance.*`,
 typé, jamais de texte libre) est posté en attribut, absorbé par
 `extra_attributes` exactement comme `oncology.*` aujourd'hui. Généralise
-mieux qu'un worker centralisé : zéro couplage trellis à un fournisseur LLM
+mieux qu'un worker centralisé : zéro couplage Venice à un fournisseur LLM
 ou un format par client. Détail complet dans
 `docs/interfaces/triage-eval-plugin.md`.
 

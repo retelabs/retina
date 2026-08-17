@@ -7,7 +7,7 @@
 //! inventées.
 //!
 //! Compare deux options qui partagent le même cœur (VM + `orchestrator` +
-//! ClickHouse/kernel/query-api, voir l'artefact "Trellis Deployment") :
+//! ClickHouse/kernel/query-api, voir l'artefact "Venice Deployment") :
 //! "100% perso" (rien d'autre) et "hybride" (+ stockage objet pour les
 //! backups, le seul des 3 ajouts hybrides dont le coût dépend du volume —
 //! le registre de conteneurs et le CDN sont déjà à 0€ à tout volume

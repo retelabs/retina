@@ -300,6 +300,7 @@ dependencies = [
  "clickhouse",
  "kernel-model",
  "otlp-receiver",
+ "pricing",
  "serde",
  "tokio",
 ]
@@ -1482,6 +1483,13 @@ checksum = "479ca8adacdd7ce8f1fb39ce9ecccbfe93a3f1344b3d0d97f20bc0196208f62b"
 dependencies = [
  "proc-macro2",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "pricing"
+version = "0.1.0"
+dependencies = [
+ "kernel-model",
 ]
 
 [[package]]

@@ -101,6 +101,11 @@ ORDER BY (trace_id, start_time, span_id)
 - `agent_name` est réutilisé entre `ToolCallEvent` (l'agent qui exécute l'outil)
   et `AgentRunEvent` (l'agent lui-même) — même colonne, sémantique cohérente
   dans les deux cas (dossier ne distingue pas les deux).
+- **`cost_usd Nullable(Float64)` (migration `0003_add_cost_usd.sql`,
+  2026-08-17)** : coût $ calculé une seule fois à l'ingestion
+  (`crates/pricing`), jamais recalculé après coup. Détail complet (table de
+  prix, comptabilité de cache par fournisseur) :
+  `docs/interfaces/cost-calculation.md`.
 
 ## `extra_attributes` : `Map(String, String)`, pas `Map(String, AnyValue)`
 

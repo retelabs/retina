@@ -150,20 +150,31 @@ Champs par span (`SpanDto`, `crates/query-api/src/dto.rs`) : `trace_id`,
 `status_message`, `error_type`, `operation_name`, `provider_name`,
 `request_model`, `response_model`, `input_tokens`, `output_tokens`,
 `cache_read_input_tokens`, `cache_creation_input_tokens`,
-`finish_reasons`, `conversation_id`, `tool_name`, `tool_call_id`,
+`finish_reasons`, `conversation_id`, `cost_usd`, `tool_name`, `tool_call_id`,
 `tool_type`, `tool_description`, `agent_invocation_kind`, `agent_name`,
 `agent_id`, `agent_description`, `agent_version`, et `extra_attributes`
 (objet `string → string` — tout ce qui n'est pas un champ de première
 classe, y compris les attributs `<vertical>.*` et `plugin.warning`).
 
+`cost_usd` (ajouté le 2026-08-17) : `null` sauf si le span pose
+`gen_ai.usage.input_tokens`/`output_tokens` **et** un `gen_ai.request.model`/
+`response.model` reconnu par la table de prix statique de
+`crates/pricing` (aujourd'hui : une partie des modèles OpenAI et
+Anthropic seulement — détail et lacunes connues dans
+`docs/interfaces/cost-calculation.md`). Calculé une seule fois à
+l'ingestion, jamais recalculé après un changement de tarif.
+
 ### `GET /metrics/summary` — agrégats
 
 ```json
 {
-  "by_kind": [{ "kind": "agent_run", "span_count": 1, "total_input_tokens": 8420, "total_output_tokens": 1150 }],
+  "by_kind": [{ "kind": "agent_run", "span_count": 1, "total_input_tokens": 8420, "total_output_tokens": 1150, "total_cost_usd": 0.126 }],
   "spans_with_warnings": 0
 }
 ```
+
+`total_cost_usd` : `null` (pas `0.0`) si aucun span du groupe n'a de coût
+calculé — distinct d'un coût réellement nul.
 
 `spans_with_warnings` : nombre de spans portant au moins une entrée
 `plugin.warning` — le signal de gouvernance/monitoring produit par les

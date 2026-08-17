@@ -546,6 +546,89 @@ Rédigées rétroactivement : `0001` (multi-tenant hors périmètre),
 rejeté). Aucune nouvelle décision tranchée par l'exercice — une
 rétro-documentation, pas une nouvelle négociation.
 
+## Premier client réel branché : client-project (the-client) (2026-08-17, en cours)
+
+Trellis sert désormais de kernel d'observabilité pour un vrai projet client
+(`a separate client project`,
+SaaS santé .NET, agents triage/résumé/conformité/enrichissement d'appel,
+plugin `MedicalPlugin` branché temporairement dessus — le nom "oncology"
+sera généralisé plus tard). Le câblage OTLP/gRPC fonctionne en conditions
+réelles. En creusant l'écart avec ce qu'un outil comme LangSmith donne, deux
+manques sont ressortis et scopés avec l'utilisateur avant tout code (règle
+permanente du projet) : coût $ par span, et suivi de conversation/thread.
+
+**Suivi de conversation** : `conversation_id` existe déjà dans le schéma
+mais rien ne le peuplait côté the-client. Exploration réelle du code the-client (pas
+supposée) : `AgentOrchestrator.RunAsync` est le seul point d'ouverture du
+span `invoke_agent` pour les 4 agents ; seul l'enrichissement d'appel
+(`EnrichCallWithAiCommand`) porte un id métier réel (`CallId`) sur ce
+chemin — triage/résumé/conformité sont des endpoints "playground" texte
+libre (`RunAgentQuery`/`AiController`), sans identifiant de domaine.
+Fausse piste éliminée : `OutboxEntry.CorrelationId` existe dans leur modèle
+mais n'est jamais peuplé. **Décision côté the-client (leur équipe, pas trellis)**,
+vérifiée contre leur frontend aussi (`AiComponent`, aucun `callId` sur ce
+chemin) : on laisse tel quel — construire le lien manquant serait une vraie
+feature de navigation, hors scope pour l'instant. Conséquence côté kernel :
+seul l'agent d'enrichissement d'appel portera jamais un `conversation_id`
+non-null pour the-client dans l'état actuel, pas une limite à corriger côté
+trellis.
+
+**Calculateur de coût $ — fait.** Trois questions scopées avec l'utilisateur
+avant de coder (`docs/interfaces/cost-calculation.md`, détail complet) :
+table de prix statique versionnée dans le repo (pas fournie par le client),
+calcul une seule fois à l'ingestion (pas à la requête), un changement de
+tarif ne recalcule jamais l'historique déjà stocké. Nouveau crate
+`crates/pricing` (dépend seulement de `kernel-model` pour `ProviderName`),
+appelé depuis `crates/clickhouse-sink/src/row.rs` — le point où
+`provider_name`/modèle/tokens sont déjà rassemblés par type d'événement,
+donc kernel-model reste une dérivation pure de semconv sans logique
+business, et `otlp-receiver::convert.rs` reste un mapping protocole pur.
+Nouvelle colonne `spans.cost_usd Nullable(Float64)`
+(migration `0003_add_cost_usd.sql`), exposée dans `SpanDto.cost_usd` et
+`MetricsSummaryDto.by_kind[].total_cost_usd`.
+
+**Trouvaille structurante, vérifiée contre `docs/interfaces/semconv-genai.md`
+avant de coder (déjà documentée à l'étape 1, pas redécouverte)** : la
+comptabilité des tokens de cache diffère par fournisseur — Anthropic exclut
+les tokens de cache d'`input_tokens` (à rajouter), OpenAI/Azure les
+incluent déjà. Une formule de coût unique aurait été fausse pour l'un des
+deux. `CacheAccounting` (`IncludedInInput`/`AdditionalToInput`) encode
+cette différence explicitement plutôt que de deviner une formule
+universelle.
+
+Prix vérifiés contre les vraies pages officielles le 2026-08-17 (pas
+depuis la mémoire, règle permanente du projet) : OpenAI
+(`developers.openai.com/api/docs/pricing`), Anthropic
+(`platform.claude.com/docs/en/about-claude/pricing`). Groq (demandé
+explicitement par l'utilisateur) **non tarifé, délibérément** : la page
+officielle n'a renvoyé aucun tableau exploitable et la doc console a
+renvoyé 404 — seuls des agrégateurs tiers avaient des chiffres, écartés
+pour la même raison que la divergence Hetzner déjà rencontrée dans
+`docs/cost-model.md` (chiffres non fiables). AWS Bedrock/watsonx/GCP/Azure/
+Cohere/Perplexity/xAI/DeepSeek/Mistral/Moonshot : non tarifés non plus, non
+demandés et non vérifiés cette session — un span de ces fournisseurs reste
+`cost_usd = NULL`, jamais un mauvais chiffre.
+
+Lacune connue, documentée plutôt que masquée : aucune télémétrie réelle
+n'existait pour confirmer le format exact des chaînes `request_model`/
+`response_model` envoyées en pratique (the-client ne peuple aujourd'hui aucun des
+deux) — la table de prix fait un lookup par correspondance exacte, à
+vérifier contre de vraies réponses d'API avant de faire confiance à sa
+couverture au-delà des montants par token eux-mêmes.
+
+Vérifié à deux niveaux : 7 tests unitaires `crates/pricing` (comptabilité
+de cache par fournisseur, modèle/provider inconnu → `None` pas une erreur,
+table de prix cohérente avec `ProviderName::as_str()`) et 4 nouveaux tests
+`clickhouse-sink`/`query-api` ; **`sum(cost_usd)` vérifié empiriquement
+contre un vrai ClickHouse** (pas supposé) : `NULL` sur un groupe vide *et*
+sur un groupe entièrement `NULL` — d'où `total_cost_usd: Option<f64>`,
+délibérément pas ramené à `0.0` comme les totaux de tokens, pour ne pas
+confondre "aucun span tarifé" avec "coût réellement nul". Bout en bout réel
+via `cargo test -p clickhouse-sink -p query-api -- --ignored` contre
+`scripts/dev-clickhouse.sh up` : un span `gpt-4o-mini` réellement inséré,
+relu via `GET /traces/{trace_id}` et `GET /metrics/summary`, coût exact
+au centime près.
+
 ## Repères techniques
 
 - Ingestion OTLP : `tonic` + `prost`.

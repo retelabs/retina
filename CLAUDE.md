@@ -930,6 +930,31 @@ produit. Vérifié visuellement sur une grande fenêtre simulée (160×55) :
 dégradé de densité net (`.`/`:`/`-`/`=`/`+`/`*`), anneau et V bien
 lisibles, fond réellement vide.
 
+**Intro paginée + onglet "Aide" — fait.** Demande explicite de
+l'utilisateur : un défilement interactif expliquant Venice (histoire, à
+quoi ça se connecte, liens vers la doc), avec l'idée qu'une doc soit
+accessible depuis le TUI, pas seulement au démarrage. `crates/tui/src/content.rs`
+devient la source unique de ce texte (4 pages : pitch, histoire,
+écosystème, pointeurs de doc — chaque affirmation ancrée dans l'historique
+réel du projet, pas inventée) — réutilisée à la fois par l'intro
+(`main.rs::show_intro`) et par un 4ᵉ onglet "Aide" dans l'app
+(`app::View::Help`), pour ne jamais avoir deux copies de ce texte.
+
+`show_splash` renommé `show_intro`, devient une machine à écrans
+(0 = logo, 1..N = pages de contenu) entièrement pilotée au clavier —
+**le timer d'auto-avance de 4s a été retiré** : forcer un délai fixe
+pendant qu'on lit du contenu réel serait allé à l'encontre du mot
+"interactif" explicitement demandé. `→`/Entrée/Espace avance, `←` revient
+en arrière, Échap/`q` passe direct à l'app depuis n'importe quel écran.
+L'onglet "Aide" réutilise le même rendu de page (`ui::draw_content_page`)
+et se navigue avec `←`/`→` une fois sélectionné via `Tab`.
+
+Vérifié bout en bout via pseudo-terminal + `pyte` : les 4 transitions de
+page affichent le bon contenu et le bon compteur (1/4 → 4/4), `Entrée` sur
+la dernière page entre bien dans l'app, `Tab`×3 atteint bien l'onglet
+"Aide" qui affiche le même contenu que l'intro. 3 nouveaux tests unitaires
+sur la pagination (`help_next_page`/`help_prev_page`, bornes incluses).
+
 ## Repères techniques
 
 - Ingestion OTLP : `tonic` + `prost`.

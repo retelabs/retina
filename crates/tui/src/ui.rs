@@ -10,6 +10,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Tabs};
 
 use crate::app::{App, View, humanize_ago, span_tree};
+use crate::content;
 
 /// Approximates the teal in `UI/assets/logos/logo_venice_v1.png` — an
 /// `Rgb` value, so it only renders as true teal on a truecolor terminal;
@@ -200,7 +201,7 @@ fn splash_caption_lines() -> Vec<Line<'static>> {
         .alignment(Alignment::Center),
         Line::default(),
         Line::from(Span::styled(
-            "appuyez sur une touche pour continuer...",
+            "→ pour en savoir plus · Échap pour passer",
             Style::default().fg(Color::DarkGray),
         ))
         .alignment(Alignment::Center),
@@ -279,6 +280,7 @@ pub fn draw(frame: &mut Frame, app: &App) {
         View::Traces => draw_traces(frame, chunks[1], app),
         View::TraceDetail => draw_trace_detail(frame, chunks[1], app),
         View::Metrics => draw_metrics(frame, chunks[1], app),
+        View::Help => draw_help(frame, chunks[1], app),
     }
 
     draw_footer(frame, chunks[2], app);
@@ -299,11 +301,12 @@ fn venice_block(title: &str) -> Block<'_> {
 }
 
 fn draw_tabs(frame: &mut Frame, area: Rect, current: View) {
-    let titles = ["Traces", "Détail", "Métriques"];
+    let titles = ["Traces", "Détail", "Métriques", "Aide"];
     let selected = match current {
         View::Traces => 0,
         View::TraceDetail => 1,
         View::Metrics => 2,
+        View::Help => 3,
     };
     let tabs = Tabs::new(titles.to_vec())
         .block(venice_block(" Venice "))
@@ -428,10 +431,65 @@ fn draw_metrics(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(paragraph, area);
 }
 
+/// Shared by `draw_help` (in-app, via the "Aide" tab) and the paginated
+/// intro (`main.rs::show_intro`, full-screen instead of inside the tab
+/// layout) — one rendering of a `content::Page`, not two.
+pub fn draw_content_page(
+    frame: &mut Frame,
+    area: Rect,
+    page: &content::Page,
+    index: usize,
+    count: usize,
+) {
+    let title = format!(" {} ({}/{}) ", page.title, index + 1, count);
+    let paragraph = Paragraph::new(page.body.clone()).block(venice_block(&title));
+    frame.render_widget(paragraph, area);
+}
+
+/// Intro-only: the content page plus a one-line navigation hint below it —
+/// the in-app "Aide" tab already gets its hint from `draw_footer`'s normal
+/// status line, but the intro has no such chrome of its own.
+pub fn draw_intro_page(
+    frame: &mut Frame,
+    page: &content::Page,
+    index: usize,
+    count: usize,
+    is_last: bool,
+) {
+    let area = frame.area();
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(0), Constraint::Length(1)])
+        .split(area);
+    draw_content_page(frame, chunks[0], page, index, count);
+
+    let hint = if is_last {
+        "← page précédente · Entrée : entrer dans l'app · Échap : passer"
+    } else {
+        "←/→ : page précédente/suivante · Échap : passer à l'app"
+    };
+    frame.render_widget(
+        Paragraph::new(hint)
+            .style(Style::default().fg(Color::DarkGray))
+            .alignment(Alignment::Center),
+        chunks[1],
+    );
+}
+
+fn draw_help(frame: &mut Frame, area: Rect, app: &App) {
+    let pages = content::pages();
+    let page = &pages[app.help_page.min(pages.len() - 1)];
+    draw_content_page(frame, area, page, app.help_page, pages.len());
+}
+
 fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
+    let default_hint = match app.view {
+        View::Help => "←/→: page précédente/suivante · Tab: changer de vue · q: quitter",
+        _ => "Tab: changer de vue · q: quitter",
+    };
     let text = app
         .status
         .clone()
-        .unwrap_or_else(|| "Tab: changer de vue · q: quitter".to_string());
+        .unwrap_or_else(|| default_hint.to_string());
     frame.render_widget(Paragraph::new(text), area);
 }

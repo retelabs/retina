@@ -25,13 +25,16 @@ Les deux exigent un jeton (`docs/client-integration.md#envoyer-de-la-télémétr
 Miroir strict des 3 endpoints `query-api` — traces récentes, détail d'une
 trace (arbre de spans reconstruit côté client), résumé des métriques
 (tokens/coût/warnings). Pas de nouveau endpoint, juste une interface sur ce
-qui existe déjà.
+qui existe déjà. Une intro paginée présente Venice au premier lancement
+(passable à tout moment) ; le même contenu reste accessible ensuite via
+l'onglet "Aide".
 
 ```bash
 QUERY_API_URL=http://localhost:8080 QUERY_API_KEY=<votre jeton> \
   cargo run -p tui
 ```
 
-Navigation : `Tab` change de vue, `↑`/`↓` (ou `j`/`k`) sélectionne une
-trace, `Entrée` ouvre son détail, `r` rafraîchit la vue courante, `Échap`
+Navigation : `Tab` change de vue (Traces/Détail/Métriques/Aide), `↑`/`↓`
+(ou `j`/`k`) sélectionne une trace, `Entrée` ouvre son détail, `←`/`→`
+feuillette les pages d'aide, `r` rafraîchit la vue courante, `Échap`
 revient à la liste, `q` quitte.

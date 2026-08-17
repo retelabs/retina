@@ -9,6 +9,7 @@ pub enum View {
     Traces,
     TraceDetail,
     Metrics,
+    Help,
 }
 
 pub struct App {
@@ -19,6 +20,11 @@ pub struct App {
     pub metrics: Option<MetricsSummaryDto>,
     pub status: Option<String>,
     pub should_quit: bool,
+    /// Which page of `content::pages()` the "Aide" tab currently shows —
+    /// reachable any time from the main app, not just at startup, same
+    /// content the paginated intro uses (`content.rs`, one source of
+    /// truth for both).
+    pub help_page: usize,
 }
 
 impl App {
@@ -31,6 +37,7 @@ impl App {
             metrics: None,
             status: Some("chargement...".to_string()),
             should_quit: false,
+            help_page: 0,
         }
     }
 
@@ -42,6 +49,16 @@ impl App {
 
     pub fn select_prev(&mut self) {
         self.selected_trace = self.selected_trace.saturating_sub(1);
+    }
+
+    pub fn help_next_page(&mut self, page_count: usize) {
+        if page_count > 0 {
+            self.help_page = (self.help_page + 1).min(page_count - 1);
+        }
+    }
+
+    pub fn help_prev_page(&mut self) {
+        self.help_page = self.help_page.saturating_sub(1);
     }
 }
 
@@ -125,6 +142,29 @@ pub fn humanize_ago(start_time_unix_nano: u64, now_unix_nano: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn help_next_page_stops_at_the_last_page() {
+        let mut app = App::new();
+        for _ in 0..10 {
+            app.help_next_page(3);
+        }
+        assert_eq!(app.help_page, 2);
+    }
+
+    #[test]
+    fn help_prev_page_stops_at_zero() {
+        let mut app = App::new();
+        app.help_prev_page();
+        assert_eq!(app.help_page, 0);
+    }
+
+    #[test]
+    fn help_next_page_is_a_no_op_on_an_empty_page_list() {
+        let mut app = App::new();
+        app.help_next_page(0);
+        assert_eq!(app.help_page, 0);
+    }
 
     fn span(id: &str, parent: Option<&str>) -> SpanDto {
         SpanDto {

@@ -5,5 +5,6 @@
 
 pub mod api;
 pub mod app;
+pub mod content;
 pub mod logo;
 pub mod ui;

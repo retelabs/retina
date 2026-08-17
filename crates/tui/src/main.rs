@@ -47,12 +47,13 @@ async fn refresh_metrics(client: &ApiClient, app: &mut App) {
     }
 }
 
-/// Shown for a fixed duration or until any key is pressed — a splash isn't
-/// worth making someone wait through, so any key skips it rather than
-/// forcing the full duration.
-const SPLASH_DURATION: std::time::Duration = std::time::Duration::from_millis(4000);
-
-async fn show_splash(
+/// Paginated intro: screen 0 is the logo splash (`ui::draw_splash`), screens
+/// 1.. are `content::pages()` (the same pages the in-app "Aide" tab shows —
+/// `content.rs` is the one place that owns this text). Fully manual
+/// navigation, no auto-advance timer: forcing a fixed delay while someone
+/// is actually reading multi-page content would fight the point of making
+/// this "interactive" rather than a fixed-duration splash.
+async fn show_intro(
     terminal: &mut ratatui::DefaultTerminal,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // `None` if decoding the real logo failed for any reason — draw_splash
@@ -63,17 +64,36 @@ async fn show_splash(
     // that doesn't fit *before* sampling is exactly the bug that made the
     // logo not render at all on a common 80×24 terminal (crates/tui/src/logo.rs).
     let logo = tui::logo::load(terminal.size()?);
-    let start = std::time::Instant::now();
+    let pages = tui::content::pages();
+    let total_screens = 1 + pages.len();
+    let mut screen: usize = 0;
+
     loop {
-        terminal.draw(|frame| ui::draw_splash(frame, logo.as_ref()))?;
-        if start.elapsed() >= SPLASH_DURATION {
-            return Ok(());
+        terminal.draw(|frame| {
+            if screen == 0 {
+                ui::draw_splash(frame, logo.as_ref());
+            } else {
+                let is_last = screen + 1 >= total_screens;
+                ui::draw_intro_page(frame, &pages[screen - 1], screen - 1, pages.len(), is_last);
+            }
+        })?;
+
+        let Event::Key(key) = event::read()? else {
+            continue;
+        };
+        if key.kind != KeyEventKind::Press {
+            continue;
         }
-        if event::poll(std::time::Duration::from_millis(50))?
-            && let Event::Key(key) = event::read()?
-            && key.kind == KeyEventKind::Press
-        {
-            return Ok(());
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => return Ok(()), // skip the whole intro
+            KeyCode::Right | KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Down => {
+                if screen + 1 >= total_screens {
+                    return Ok(()); // last screen, "next" enters the app
+                }
+                screen += 1;
+            }
+            KeyCode::Left | KeyCode::Up => screen = screen.saturating_sub(1),
+            _ => {}
         }
     }
 }
@@ -88,7 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut terminal = ratatui::init();
     let result = async {
-        show_splash(&mut terminal).await?;
+        show_intro(&mut terminal).await?;
         refresh_traces(&client, &mut app).await;
         run(&mut terminal, &client, &mut app).await
     }
@@ -102,6 +122,11 @@ async fn run(
     client: &ApiClient,
     app: &mut App,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Same content the paginated intro shows — reachable any time via the
+    // "Aide" tab, not just at startup (the whole point of the request that
+    // led to this: docs shouldn't only exist as a one-shot splash).
+    let help_page_count = tui::content::pages().len();
+
     loop {
         terminal.draw(|frame| ui::draw(frame, app))?;
 
@@ -124,7 +149,8 @@ async fn run(
                 app.view = match app.view {
                     View::Traces => View::TraceDetail,
                     View::TraceDetail => View::Metrics,
-                    View::Metrics => View::Traces,
+                    View::Metrics => View::Help,
+                    View::Help => View::Traces,
                 };
                 if app.view == View::Metrics && app.metrics.is_none() {
                     refresh_metrics(client, app).await;
@@ -132,6 +158,8 @@ async fn run(
             }
             KeyCode::Down | KeyCode::Char('j') if app.view == View::Traces => app.select_next(),
             KeyCode::Up | KeyCode::Char('k') if app.view == View::Traces => app.select_prev(),
+            KeyCode::Right if app.view == View::Help => app.help_next_page(help_page_count),
+            KeyCode::Left if app.view == View::Help => app.help_prev_page(),
             KeyCode::Enter if app.view == View::Traces => {
                 app.view = View::TraceDetail;
                 refresh_trace_detail(client, app).await;
@@ -140,6 +168,7 @@ async fn run(
                 View::Traces => refresh_traces(client, app).await,
                 View::TraceDetail => refresh_trace_detail(client, app).await,
                 View::Metrics => refresh_metrics(client, app).await,
+                View::Help => {}
             },
             _ => {}
         }

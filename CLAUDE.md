@@ -966,6 +966,18 @@ ce fichier, pas dans l'app. L'onglet "Aide" renommé "Help" en cohérence
 (la page 3 dit littéralement "look for Help"). `README.md` mis à jour en
 conséquence.
 
+**Reste de l'app passé en anglais aussi** (deux retours successifs :
+d'abord juste l'écran du logo/les indices de navigation d'intro, puis "la
+langue de l'app" en entier) : onglets (`Traces`/`Detail`/`Metrics`/`Help`),
+titres de panneaux, messages d'erreur (`app.status`), indice de pied de
+page. Toute la doc (`README.md`, `CLAUDE.md`, `docs/`) reste en français
+comme le reste du repo — seule l'interface du TUI elle-même (ce que
+l'utilisateur voit à l'écran) est concernée, pas la documentation du
+projet. Vérifié bout en bout via pseudo-terminal + `pyte`, cycle complet
+Traces → Detail → Metrics → Help → page 2, aucun texte français restant
+dans l'app (`grep` sur les caractères accentués dans `crates/tui/src/`,
+zéro résultat).
+
 ## Repères techniques
 
 - Ingestion OTLP : `tonic` + `prost`.

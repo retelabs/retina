@@ -34,7 +34,8 @@ QUERY_API_URL=http://localhost:8080 QUERY_API_KEY=<votre jeton> \
   cargo run -p tui
 ```
 
-Navigation : `Tab` change de vue (Traces/Détail/Métriques/Help), `↑`/`↓`
+Navigation : `Tab` change de vue (Traces/Detail/Metrics/Help), `↑`/`↓`
 (ou `j`/`k`) sélectionne une trace, `Entrée` ouvre son détail, `←`/`→`
 feuillette les pages d'aide, `r` rafraîchit la vue courante, `Échap`
-revient à la liste, `q` quitte.
+revient à la liste, `q` quitte. L'interface elle-même (labels, aide) est
+en anglais ; cette documentation reste en français comme le reste du repo.

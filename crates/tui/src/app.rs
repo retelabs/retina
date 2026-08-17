@@ -35,7 +35,7 @@ impl App {
             selected_trace: 0,
             trace_spans: Vec::new(),
             metrics: None,
-            status: Some("chargement...".to_string()),
+            status: Some("loading...".to_string()),
             should_quit: false,
             help_page: 0,
         }

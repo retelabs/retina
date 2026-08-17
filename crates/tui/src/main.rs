@@ -20,7 +20,7 @@ async fn refresh_traces(client: &ApiClient, app: &mut App) {
             app.selected_trace = app.selected_trace.min(app.traces.len().saturating_sub(1));
             app.status = None;
         }
-        Err(e) => app.status = Some(format!("erreur /traces: {e}")),
+        Err(e) => app.status = Some(format!("error /traces: {e}")),
     }
 }
 
@@ -33,7 +33,7 @@ async fn refresh_trace_detail(client: &ApiClient, app: &mut App) {
             app.trace_spans = spans;
             app.status = None;
         }
-        Err(e) => app.status = Some(format!("erreur /traces/{{id}}: {e}")),
+        Err(e) => app.status = Some(format!("error /traces/{{id}}: {e}")),
     }
 }
 
@@ -43,7 +43,7 @@ async fn refresh_metrics(client: &ApiClient, app: &mut App) {
             app.metrics = Some(metrics);
             app.status = None;
         }
-        Err(e) => app.status = Some(format!("erreur /metrics/summary: {e}")),
+        Err(e) => app.status = Some(format!("error /metrics/summary: {e}")),
     }
 }
 

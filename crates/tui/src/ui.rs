@@ -301,7 +301,7 @@ fn venice_block(title: &str) -> Block<'_> {
 }
 
 fn draw_tabs(frame: &mut Frame, area: Rect, current: View) {
-    let titles = ["Traces", "Détail", "Métriques", "Help"];
+    let titles = ["Traces", "Detail", "Metrics", "Help"];
     let selected = match current {
         View::Traces => 0,
         View::TraceDetail => 1,
@@ -327,7 +327,7 @@ fn draw_traces(frame: &mut Frame, area: Rect, app: &App) {
         .map(|t| {
             let ago = humanize_ago(t.start_time_unix_nano, now);
             let line = format!(
-                "{}  ·  {} spans  ·  il y a {ago}",
+                "{}  ·  {} spans  ·  {ago} ago",
                 &t.trace_id[..t.trace_id.len().min(16)],
                 t.span_count
             );
@@ -342,7 +342,7 @@ fn draw_traces(frame: &mut Frame, area: Rect, app: &App) {
 
     let list = List::new(items)
         .block(venice_block(
-            " Traces récentes (↑/↓, Entrée pour le détail, r pour rafraîchir) ",
+            " Recent traces (↑/↓, Enter for detail, r to refresh) ",
         ))
         .highlight_style(
             Style::default()
@@ -383,7 +383,7 @@ fn draw_trace_detail(frame: &mut Frame, area: Rect, app: &App) {
         .collect();
 
     let title = format!(
-        " Trace {} — {} spans (Échap pour revenir) ",
+        " Trace {} — {} spans (Esc to go back) ",
         app.trace_spans
             .first()
             .map(|s| s.trace_id.as_str())
@@ -399,7 +399,7 @@ fn draw_metrics(frame: &mut Frame, area: Rect, app: &App) {
     let mut lines: Vec<Line> = Vec::new();
 
     match &app.metrics {
-        None => lines.push(Line::from("chargement...")),
+        None => lines.push(Line::from("loading...")),
         Some(metrics) => {
             for kind in &metrics.by_kind {
                 let cost = kind
@@ -427,7 +427,7 @@ fn draw_metrics(frame: &mut Frame, area: Rect, app: &App) {
         }
     }
 
-    let paragraph = Paragraph::new(lines).block(venice_block(" Résumé (r pour rafraîchir) "));
+    let paragraph = Paragraph::new(lines).block(venice_block(" Summary (r to refresh) "));
     frame.render_widget(paragraph, area);
 }
 
@@ -484,8 +484,8 @@ fn draw_help(frame: &mut Frame, area: Rect, app: &App) {
 
 fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
     let default_hint = match app.view {
-        View::Help => "←/→: previous/next page · Tab: changer de vue · q: quitter",
-        _ => "Tab: changer de vue · q: quitter",
+        View::Help => "←/→: previous/next page · Tab: switch view · q: quit",
+        _ => "Tab: switch view · q: quit",
     };
     let text = app
         .status

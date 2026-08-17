@@ -20,10 +20,10 @@ pub struct App {
     pub metrics: Option<MetricsSummaryDto>,
     pub status: Option<String>,
     pub should_quit: bool,
-    /// Which page of `content::pages()` the "Help" tab currently shows —
-    /// reachable any time from the main app, not just at startup, same
-    /// content the paginated intro uses (`content.rs`, one source of
-    /// truth for both).
+    /// Which page of `content::reference_pages()` the "Help" tab currently
+    /// shows — reachable any time from the main app, not just at startup.
+    /// Deliberately just the quick-reference subset of what the intro
+    /// shows (`content.rs`), not the onboarding narrative pages.
     pub help_page: usize,
 }
 

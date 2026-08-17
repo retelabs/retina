@@ -477,7 +477,7 @@ pub fn draw_intro_page(
 }
 
 fn draw_help(frame: &mut Frame, area: Rect, app: &App) {
-    let pages = content::pages();
+    let pages = content::reference_pages();
     let page = &pages[app.help_page.min(pages.len() - 1)];
     draw_content_page(frame, area, page, app.help_page, pages.len());
 }

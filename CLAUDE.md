@@ -990,6 +990,19 @@ ailleurs) documenté tel quel plutôt que simplifié à tort. Vérifié
 visuellement via pseudo-terminal + `pyte` : les deux pages s'affichent
 correctement alignées, compteur 4/5 et 5/5 corrects.
 
+**Précision de portée** ("le parcours c'est juste à l'intro, uniquement la
+doc style man dans Help") : `content::pages()` scindé en deux fonctions —
+`intro_pages()` (les 5 pages, tour complet au démarrage) et
+`reference_pages()` (seulement Commands + Glossary, 2 pages). L'onglet
+"Help" dans l'app n'utilise plus que `reference_pages()` — le pitch/
+narratif (Venice, What it does, Get started) est une visite ponctuelle au
+premier lancement, pas un contenu à re-consulter en pleine session.
+Chaque page reste construite par une seule fonction (`venice_page()`,
+`commands_page()`, etc.) réutilisée par les deux listes — pas de texte
+dupliqué entre l'intro et l'onglet. Vérifié visuellement : l'onglet Help
+affiche bien 2 pages (Commands 1/2, Glossary 2/2), la navigation reste
+bornée à la dernière page.
+
 ## Repères techniques
 
 - Ingestion OTLP : `tonic` + `prost`.

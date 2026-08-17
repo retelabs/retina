@@ -48,11 +48,15 @@ async fn refresh_metrics(client: &ApiClient, app: &mut App) {
 }
 
 /// Paginated intro: screen 0 is the logo splash (`ui::draw_splash`), screens
-/// 1.. are `content::pages()` (the same pages the in-app "Help" tab shows —
-/// `content.rs` is the one place that owns this text). Fully manual
-/// navigation, no auto-advance timer: forcing a fixed delay while someone
-/// is actually reading multi-page content would fight the point of making
-/// this "interactive" rather than a fixed-duration splash.
+/// 1.. are `content::intro_pages()` — the full onboarding tour (product
+/// pitch, then the same reference pages the in-app "Help" tab offers). The
+/// in-app "Help" tab only shows the reference subset
+/// (`content::reference_pages()`) once you're past onboarding — the
+/// pitch/narrative pages are a one-time tour, not something to re-read
+/// mid-session. Fully manual navigation, no auto-advance timer: forcing a
+/// fixed delay while someone is actually reading multi-page content would
+/// fight the point of making this "interactive" rather than a
+/// fixed-duration splash.
 async fn show_intro(
     terminal: &mut ratatui::DefaultTerminal,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -64,7 +68,7 @@ async fn show_intro(
     // that doesn't fit *before* sampling is exactly the bug that made the
     // logo not render at all on a common 80×24 terminal (crates/tui/src/logo.rs).
     let logo = tui::logo::load(terminal.size()?);
-    let pages = tui::content::pages();
+    let pages = tui::content::intro_pages();
     let total_screens = 1 + pages.len();
     let mut screen: usize = 0;
 
@@ -122,10 +126,12 @@ async fn run(
     client: &ApiClient,
     app: &mut App,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Same content the paginated intro shows — reachable any time via the
-    // "Help" tab, not just at startup (the whole point of the request that
-    // led to this: docs shouldn't only exist as a one-shot splash).
-    let help_page_count = tui::content::pages().len();
+    // Reference-only subset of the intro's content — reachable any time via
+    // the "Help" tab (the whole point of the request that led to this: docs
+    // shouldn't only exist as a one-shot splash), but without the
+    // onboarding narrative pages, which are a one-time tour, not something
+    // to re-read mid-session.
+    let help_page_count = tui::content::reference_pages().len();
 
     loop {
         terminal.draw(|frame| ui::draw(frame, app))?;

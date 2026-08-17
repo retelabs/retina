@@ -27,14 +27,14 @@ trace (arbre de spans reconstruit côté client), résumé des métriques
 (tokens/coût/warnings). Pas de nouveau endpoint, juste une interface sur ce
 qui existe déjà. Une intro paginée présente Venice au premier lancement
 (passable à tout moment) ; le même contenu reste accessible ensuite via
-l'onglet "Aide".
+l'onglet "Help".
 
 ```bash
 QUERY_API_URL=http://localhost:8080 QUERY_API_KEY=<votre jeton> \
   cargo run -p tui
 ```
 
-Navigation : `Tab` change de vue (Traces/Détail/Métriques/Aide), `↑`/`↓`
+Navigation : `Tab` change de vue (Traces/Détail/Métriques/Help), `↑`/`↓`
 (ou `j`/`k`) sélectionne une trace, `Entrée` ouvre son détail, `←`/`→`
 feuillette les pages d'aide, `r` rafraîchit la vue courante, `Échap`
 revient à la liste, `q` quitte.

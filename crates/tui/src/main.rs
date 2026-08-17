@@ -48,7 +48,7 @@ async fn refresh_metrics(client: &ApiClient, app: &mut App) {
 }
 
 /// Paginated intro: screen 0 is the logo splash (`ui::draw_splash`), screens
-/// 1.. are `content::pages()` (the same pages the in-app "Aide" tab shows —
+/// 1.. are `content::pages()` (the same pages the in-app "Help" tab shows —
 /// `content.rs` is the one place that owns this text). Fully manual
 /// navigation, no auto-advance timer: forcing a fixed delay while someone
 /// is actually reading multi-page content would fight the point of making
@@ -123,7 +123,7 @@ async fn run(
     app: &mut App,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Same content the paginated intro shows — reachable any time via the
-    // "Aide" tab, not just at startup (the whole point of the request that
+    // "Help" tab, not just at startup (the whole point of the request that
     // led to this: docs shouldn't only exist as a one-shot splash).
     let help_page_count = tui::content::pages().len();
 

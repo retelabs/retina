@@ -301,7 +301,7 @@ fn venice_block(title: &str) -> Block<'_> {
 }
 
 fn draw_tabs(frame: &mut Frame, area: Rect, current: View) {
-    let titles = ["Traces", "Détail", "Métriques", "Aide"];
+    let titles = ["Traces", "Détail", "Métriques", "Help"];
     let selected = match current {
         View::Traces => 0,
         View::TraceDetail => 1,
@@ -431,7 +431,7 @@ fn draw_metrics(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(paragraph, area);
 }
 
-/// Shared by `draw_help` (in-app, via the "Aide" tab) and the paginated
+/// Shared by `draw_help` (in-app, via the "Help" tab) and the paginated
 /// intro (`main.rs::show_intro`, full-screen instead of inside the tab
 /// layout) — one rendering of a `content::Page`, not two.
 pub fn draw_content_page(
@@ -447,7 +447,7 @@ pub fn draw_content_page(
 }
 
 /// Intro-only: the content page plus a one-line navigation hint below it —
-/// the in-app "Aide" tab already gets its hint from `draw_footer`'s normal
+/// the in-app "Help" tab already gets its hint from `draw_footer`'s normal
 /// status line, but the intro has no such chrome of its own.
 pub fn draw_intro_page(
     frame: &mut Frame,

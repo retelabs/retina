@@ -955,6 +955,17 @@ la dernière page entre bien dans l'app, `Tab`×3 atteint bien l'onglet
 "Aide" qui affiche le même contenu que l'intro. 3 nouveaux tests unitaires
 sur la pagination (`help_next_page`/`help_prev_page`, bornes incluses).
 
+**Retour utilisateur sur le ton du contenu** ("moins scolaire plus
+produit... écris-le en anglais") : `content.rs` réécrit entièrement — 4
+pages ramenées à 3 (Venice / What it does / Get started), ton produit en
+anglais plutôt qu'un compte-rendu technique en français. Retiré
+explicitement : l'histoire du renommage trellis→Venice et les détails de
+vérification/tests (the-client, fraudos, dates) — ce texte s'adresse à qui
+utilise Venice, pas à qui l'a construit ; l'historique complet reste dans
+ce fichier, pas dans l'app. L'onglet "Aide" renommé "Help" en cohérence
+(la page 3 dit littéralement "look for Help"). `README.md` mis à jour en
+conséquence.
+
 ## Repères techniques
 
 - Ingestion OTLP : `tonic` + `prost`.

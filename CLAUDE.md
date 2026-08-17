@@ -819,6 +819,20 @@ Vérifié visuellement (même méthode pseudo-terminal + `pyte`) : le vrai
 logo s'affiche, correctement dimensionné et centré, structure reconnaissable
 (anneau, V) une fois le bug de taille corrigé.
 
+**Quatrième retour, un vrai bug cette fois** ("le logo n'apparaît même
+pas") : la taille cible 40×20 était fixe, pas adaptée à la taille réelle
+du terminal — sur un terminal standard **80×24** (la taille par défaut la
+plus courante, pas un cas extrême), 20 lignes d'image + 5 de légende
+dépassaient les 24 lignes disponibles, donc rien ne s'affichait. Vérifié
+en le reproduisant délibérément à 80×24 (pas juste supposé) avant de
+corriger. `logo::target_size` calcule maintenant une taille qui tient
+compte de la vraie taille du terminal (`terminal.size()?`, appelé avant le
+chargement puisqu'un `Protocol` ne se redimensionne pas après coup),
+plafonnée à 40×20 sur un grand terminal, réduite sur un petit. 3 tests
+unitaires (tient dans un 80×24, plafonne sur un très grand terminal, jamais
+de dimension nulle sur un très petit). Revérifié à 80×24 : le logo
+s'affiche correctement.
+
 ## Repères techniques
 
 - Ingestion OTLP : `tonic` + `prost`.

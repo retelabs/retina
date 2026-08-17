@@ -193,7 +193,7 @@ fn splash_caption_lines() -> Vec<Line<'static>> {
         ))
         .alignment(Alignment::Center),
         Line::from(Span::styled(
-            "kernel d'observabilité agentique",
+            "agentic observability kernel",
             Style::default()
                 .fg(Color::DarkGray)
                 .add_modifier(Modifier::ITALIC),
@@ -201,7 +201,7 @@ fn splash_caption_lines() -> Vec<Line<'static>> {
         .alignment(Alignment::Center),
         Line::default(),
         Line::from(Span::styled(
-            "→ pour en savoir plus · Échap pour passer",
+            "→ to learn more · Esc to skip",
             Style::default().fg(Color::DarkGray),
         ))
         .alignment(Alignment::Center),
@@ -464,9 +464,9 @@ pub fn draw_intro_page(
     draw_content_page(frame, chunks[0], page, index, count);
 
     let hint = if is_last {
-        "← page précédente · Entrée : entrer dans l'app · Échap : passer"
+        "← previous page · Enter: open the app · Esc: skip"
     } else {
-        "←/→ : page précédente/suivante · Échap : passer à l'app"
+        "←/→: previous/next page · Esc: skip to the app"
     };
     frame.render_widget(
         Paragraph::new(hint)
@@ -484,7 +484,7 @@ fn draw_help(frame: &mut Frame, area: Rect, app: &App) {
 
 fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
     let default_hint = match app.view {
-        View::Help => "←/→: page précédente/suivante · Tab: changer de vue · q: quitter",
+        View::Help => "←/→: previous/next page · Tab: changer de vue · q: quitter",
         _ => "Tab: changer de vue · q: quitter",
     };
     let text = app

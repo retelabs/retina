@@ -744,19 +744,28 @@ imbriqué) — gérée avec garde anti-cycle (spans visités trackés) plutôt q
 de faire confiance à la forme des données, même prudence que le serveur qui
 ne valide pas non plus un arbre à racine unique.
 
-Vérifié à trois niveaux : 5 tests unitaires (`span_tree`/`humanize_ago`,
+**Intro stylisée ajoutée après premier retour utilisateur** ("très
+minimaliste") : écran de démarrage ~2.2s (passable sur n'importe quelle
+touche), logo V calculé par arithmétique ligne/colonne plutôt que tapé à la
+main en ASCII art (garantit la symétrie quelle que soit la hauteur, pas de
+risque de désalignement à l'œil) — `ui::venice_glyph_lines`. Couleur teal
+(`Color::Rgb`) approximant celle du vrai logo, appliquée aussi aux bordures/
+titres de toutes les vues (`ui::venice_block`) pour une identité visuelle
+cohérente, pas seulement l'écran d'intro.
+
+Vérifié à quatre niveaux : 5 tests unitaires (`span_tree`/`humanize_ago`,
 y compris un cas de cycle à 2 nœuds et une référence de parent hors trace)
 sans terminal ; 4 tests d'intégration `--ignored` contre le vrai
 `query-api` déjà en service avec de vraies données the-client (5 traces, 3
 kinds, 7 `spans_with_warnings` — mêmes chiffres que la vérification the-client
-plus tôt dans la session) ; et un vrai lancement du binaire dans un
-pseudo-terminal (module `pty` Python, pas de terminal réel disponible pour
-l'outil) confirmant un cycle démarrage/arrêt propre (séquences ANSI
-d'entrée/sortie d'écran alternatif correctement appariées, code de sortie
-0 sur `q`). **Limite assumée** : la mise en page/le rendu visuel réel n'a
-pas pu être vérifié à l'œil — un TUI ne se "screenshot" pas facilement par
-l'outil, contrairement à une UI web ; à confirmer par l'utilisateur en le
-lançant réellement.
+plus tôt dans la session) ; un vrai lancement du binaire dans un
+pseudo-terminal confirmant un cycle démarrage/arrêt propre ; et **le rendu
+visuel réel vérifié pour de vrai** (correction d'une limite annoncée trop
+tôt) — pseudo-terminal avec taille explicite (`TIOCSWINSZ`) + émulation
+d'écran via `pyte` (Python) pour reconstruire ce qui s'affiche réellement,
+pas juste le flux ANSI brut : le glyphe V symétrique et centré, les 3 vues
+avec bordures/tabs qui s'affichent correctement, les vraies traces/coûts/
+warnings the-client visibles à l'écran.
 
 ## Repères techniques
 

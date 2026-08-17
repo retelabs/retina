@@ -47,18 +47,44 @@ async fn refresh_metrics(client: &ApiClient, app: &mut App) {
     }
 }
 
+/// Shown for a fixed duration or until any key is pressed — a splash isn't
+/// worth making someone wait through, so any key skips it rather than
+/// forcing the full duration.
+const SPLASH_DURATION: std::time::Duration = std::time::Duration::from_millis(2200);
+
+async fn show_splash(
+    terminal: &mut ratatui::DefaultTerminal,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let start = std::time::Instant::now();
+    loop {
+        terminal.draw(ui::draw_splash)?;
+        if start.elapsed() >= SPLASH_DURATION {
+            return Ok(());
+        }
+        if event::poll(std::time::Duration::from_millis(50))?
+            && let Event::Key(key) = event::read()?
+            && key.kind == KeyEventKind::Press
+        {
+            return Ok(());
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let base_url = env_or("QUERY_API_URL", "http://localhost:8080");
     let api_key = std::env::var("QUERY_API_KEY")
         .map_err(|_| "QUERY_API_KEY must be set — see docs/interfaces/kernel-auth.md")?;
     let client = ApiClient::new(base_url, api_key);
-
     let mut app = App::new();
-    refresh_traces(&client, &mut app).await;
 
     let mut terminal = ratatui::init();
-    let result = run(&mut terminal, &client, &mut app).await;
+    let result = async {
+        show_splash(&mut terminal).await?;
+        refresh_traces(&client, &mut app).await;
+        run(&mut terminal, &client, &mut app).await
+    }
+    .await;
     ratatui::restore();
     result
 }

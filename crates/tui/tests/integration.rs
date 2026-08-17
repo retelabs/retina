@@ -66,7 +66,10 @@ async fn fetches_real_metrics_summary() {
 #[tokio::test]
 #[ignore = "requires a real reachable query-api"]
 async fn rejects_a_bad_token() {
-    let client = ApiClient::new(env_or("QUERY_API_URL", "http://localhost:8080"), "wrong-key".to_string());
+    let client = ApiClient::new(
+        env_or("QUERY_API_URL", "http://localhost:8080"),
+        "wrong-key".to_string(),
+    );
     let err = client.list_traces(1).await.expect_err("expected 401");
     assert!(matches!(err, tui::api::ApiError::Status(status, _) if status.as_u16() == 401));
 }

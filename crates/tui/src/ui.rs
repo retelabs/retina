@@ -4,18 +4,99 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Tabs};
 
 use crate::app::{App, View, humanize_ago, span_tree};
 
+/// Approximates the teal in `UI/assets/logos/logo_venice_v1.png` — an
+/// `Rgb` value, so it only renders as true teal on a truecolor terminal;
+/// degrades to the nearest ANSI color elsewhere rather than failing.
+const VENICE_TEAL: Color = Color::Rgb(15, 110, 110);
+
 fn now_unix_nano() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_nanos() as u64)
         .unwrap_or(0)
+}
+
+/// Draws the `V` from the real logo as ASCII art — computed from row/column
+/// arithmetic rather than a hand-typed multi-line string literal, so it's
+/// guaranteed symmetric regardless of `height` instead of relying on
+/// getting every space exactly right by eye.
+fn venice_glyph_lines(height: u16) -> Vec<Line<'static>> {
+    let height = height as usize;
+    let glyph_width = 2 * height.saturating_sub(1) + 3; // +3: 2-wide stroke, meets at the point
+    let stroke = 2usize;
+
+    (0..height)
+        .map(|row| {
+            let left = row;
+            let right = glyph_width.saturating_sub(1).saturating_sub(row);
+            let mut cells = vec![' '; glyph_width];
+            for w in 0..stroke {
+                if let Some(c) = cells.get_mut(left + w) {
+                    *c = '█';
+                }
+                if right >= w
+                    && let Some(c) = cells.get_mut(right - w)
+                {
+                    *c = '█';
+                }
+            }
+            let text: String = cells.into_iter().collect();
+            Line::from(Span::styled(text, Style::default().fg(VENICE_TEAL)))
+                .alignment(Alignment::Center)
+        })
+        .collect()
+}
+
+pub fn draw_splash(frame: &mut Frame) {
+    let area = frame.area();
+    let glyph_height = area.height.saturating_sub(8).clamp(4, 12);
+    let mut lines = venice_glyph_lines(glyph_height);
+    lines.push(Line::default());
+    lines.push(
+        Line::from(Span::styled(
+            "V E N I C E",
+            Style::default()
+                .fg(VENICE_TEAL)
+                .add_modifier(Modifier::BOLD),
+        ))
+        .alignment(Alignment::Center),
+    );
+    lines.push(
+        Line::from(Span::styled(
+            "kernel d'observabilité agentique",
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+        ))
+        .alignment(Alignment::Center),
+    );
+    lines.push(Line::default());
+    lines.push(
+        Line::from(Span::styled(
+            "appuyez sur une touche pour continuer...",
+            Style::default().fg(Color::DarkGray),
+        ))
+        .alignment(Alignment::Center),
+    );
+
+    let content_height = lines.len() as u16;
+    let vchunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Fill(1),
+            Constraint::Length(content_height),
+            Constraint::Fill(1),
+        ])
+        .split(area);
+
+    frame.render_widget(Paragraph::new(lines), vchunks[1]);
 }
 
 pub fn draw(frame: &mut Frame, app: &App) {
@@ -39,6 +120,20 @@ pub fn draw(frame: &mut Frame, app: &App) {
     draw_footer(frame, chunks[2], app);
 }
 
+/// Shared border style so every panel reads as one app, not a grab-bag of
+/// default-white ratatui boxes.
+fn venice_block(title: &str) -> Block<'_> {
+    Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(VENICE_TEAL))
+        .title(Span::styled(
+            title,
+            Style::default()
+                .fg(VENICE_TEAL)
+                .add_modifier(Modifier::BOLD),
+        ))
+}
+
 fn draw_tabs(frame: &mut Frame, area: Rect, current: View) {
     let titles = ["Traces", "Détail", "Métriques"];
     let selected = match current {
@@ -47,12 +142,12 @@ fn draw_tabs(frame: &mut Frame, area: Rect, current: View) {
         View::Metrics => 2,
     };
     let tabs = Tabs::new(titles.to_vec())
-        .block(Block::default().borders(Borders::ALL).title(" Venice "))
+        .block(venice_block(" Venice "))
         .select(selected)
         .highlight_style(
             Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD),
+                .fg(VENICE_TEAL)
+                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
         );
     frame.render_widget(tabs, area);
 }
@@ -79,14 +174,13 @@ fn draw_traces(frame: &mut Frame, area: Rect, app: &App) {
     }
 
     let list = List::new(items)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Traces récentes (↑/↓, Entrée pour le détail, r pour rafraîchir) "),
-        )
+        .block(venice_block(
+            " Traces récentes (↑/↓, Entrée pour le détail, r pour rafraîchir) ",
+        ))
         .highlight_style(
             Style::default()
-                .bg(Color::DarkGray)
+                .bg(VENICE_TEAL)
+                .fg(Color::Black)
                 .add_modifier(Modifier::BOLD),
         )
         .highlight_symbol("▶ ");
@@ -130,8 +224,7 @@ fn draw_trace_detail(frame: &mut Frame, area: Rect, app: &App) {
         app.trace_spans.len()
     );
 
-    let paragraph =
-        Paragraph::new(lines).block(Block::default().borders(Borders::ALL).title(title));
+    let paragraph = Paragraph::new(lines).block(venice_block(&title));
     frame.render_widget(paragraph, area);
 }
 
@@ -150,7 +243,7 @@ fn draw_metrics(frame: &mut Frame, area: Rect, app: &App) {
                     Span::styled(
                         format!("{:<12}", kind.kind),
                         Style::default()
-                            .fg(Color::Cyan)
+                            .fg(VENICE_TEAL)
                             .add_modifier(Modifier::BOLD),
                     ),
                     Span::raw(format!(
@@ -167,11 +260,7 @@ fn draw_metrics(frame: &mut Frame, area: Rect, app: &App) {
         }
     }
 
-    let paragraph = Paragraph::new(lines).block(
-        Block::default()
-            .borders(Borders::ALL)
-            .title(" Résumé (r pour rafraîchir) "),
-    );
+    let paragraph = Paragraph::new(lines).block(venice_block(" Résumé (r pour rafraîchir) "));
     frame.render_widget(paragraph, area);
 }
 

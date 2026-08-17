@@ -669,9 +669,18 @@ applique une règle, écrit attributs/warnings) pose `eval.triage.tag_known`
 déjà) à un référentiel configurable (`TRIAGE_KNOWN_SERVICES`, défaut = les
 6 vraies valeurs the-client — pas une liste vide, qui ferait échouer tous les
 tags). Câblé dans `crates/kernel` comme les deux autres plugins
-(`ENABLED_PLUGINS`). 7 + 2 tests unitaires. **Pas encore vérifié en
-conditions réelles** : bloqué sur `oncology.triage.tag`, pas encore émis
-côté the-client — prochaine étape.
+(`ENABLED_PLUGINS`). 7 + 2 tests unitaires.
+
+**Vérifié en conditions réelles (2026-08-17, même jour).** the-client a câblé
+`oncology.triage.tag` (`AgentOrchestrator.RunAsync`, commit `8a47b80`),
+reconstruit sa stack depuis `dev` (`b422db3`), et testé un vrai appel
+("chute à vélo, genou gonflé" → tag `traumatologie`) — **un vrai défaut
+déjà en base, pas un cas fabriqué pour l'occasion** (`traumatologie` ne
+matche aucun des 6 `Service` connus). Résultat exact : `eval.triage.tag_known
+= "false"` + `plugin.warning` explicite dans `extra_attributes`,
+`spans_with_warnings` incrémenté sur `/metrics/summary`, coexistant
+proprement avec le warning HITL déjà présent sur le même span. Détecté du
+premier coup, sans ajustement après coup.
 
 **Volet 2 (juge sémantique pour summary/compliance) volontairement pas
 attaqué** : un juge LLM ne rentre pas dans le contrat de plugin actuel

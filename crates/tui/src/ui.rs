@@ -207,10 +207,9 @@ fn splash_caption_lines() -> Vec<Line<'static>> {
     ]
 }
 
-/// Centers a `width × height` area inside `outer` — `Resize::Fit` scales
-/// the image to fit whatever `Rect` it's given, it doesn't center a
-/// smaller result inside a larger one, so that centering has to happen at
-/// the layout level instead.
+/// Centers a `width × height` area inside `outer` — the logo's `Lines` are
+/// already sampled at an exact `width`/`height`, and a `Paragraph` doesn't
+/// center a smaller block inside a larger area on its own.
 fn centered_rect(outer: Rect, width: u16, height: u16) -> Rect {
     let width = width.min(outer.width);
     let height = height.min(outer.height);
@@ -243,7 +242,7 @@ pub fn draw_splash(frame: &mut Frame, logo: Option<&crate::logo::Logo>) {
                 ])
                 .split(area);
             let image_area = centered_rect(vchunks[1], logo.cells.width, logo.cells.height);
-            frame.render_widget(ratatui_image::Image::new(&logo.protocol), image_area);
+            frame.render_widget(Paragraph::new(logo.lines.clone()), image_area);
             frame.render_widget(Paragraph::new(caption), vchunks[2]);
         }
         None => {

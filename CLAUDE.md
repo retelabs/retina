@@ -902,6 +902,34 @@ sombre (aucun blanc pur), pas de régression sur le cas 80×24. 2 nouveaux
 tests unitaires (`caps_at_a_reasonable_maximum_on_a_huge_terminal` mis à
 jour pour les nouveaux plafonds, `darken_background_replaces_background_pixels_only`).
 
+**Septième retour, capture d'écran réelle du fond sombre + résolution
+relevée** : ça marchait techniquement (fond sombre confirmé, plus de
+détail), mais le rendu half-blocks reste des rectangles pleins — "on
+peut essayer une ascii art plus sophistiqué". Pivot complet, pas un
+ajustement de plus : `crates/tui/src/logo.rs` abandonne `ratatui-image`
+entièrement (dépendance retirée de `Cargo.toml`) au profit d'un vrai
+rendu ASCII par densité — rampe de caractères `' .:-=+*#%@'` choisie par
+cellule selon la luminance réelle échantillonnée (pas une simple ligne
+géométrique calculée comme le badge de secours), colorée avec la couleur
+moyenne réelle de la cellule (`image::DynamicImage::resize_exact`,
+filtre `Triangle`, une moyenne par cellule plutôt qu'un point unique).
+
+**Résout aussi le problème de fond pour de vrai, pas par contournement**
+: une cellule "fond" devient un espace littéral — transparence réelle (le
+vrai fond du terminal de l'utilisateur s'affiche, quel qu'il soit),
+contrairement au `darken_background` de l'étape précédente qui devinait
+une teinte sombre unique. `logo::picker()`/`Picker`/`Protocol` supprimés
+avec eux — plus de question de protocole Sixel/Kitty/half-blocks à
+trancher du tout, `PICKER_QUERY_TERMINAL` devient sans objet.
+
+Vérifié : 13 tests unitaires (`cell_glyph` — transparence sur fond exact,
+caractère dense sur contenu sombre — plus tous les tests de recadrage/
+dimensionnement déjà existants, adaptés à la nouvelle API), et un test
+supplémentaire qui charge le vrai asset et vérifie le nombre de lignes
+produit. Vérifié visuellement sur une grande fenêtre simulée (160×55) :
+dégradé de densité net (`.`/`:`/`-`/`=`/`+`/`*`), anneau et V bien
+lisibles, fond réellement vide.
+
 ## Repères techniques
 
 - Ingestion OTLP : `tonic` + `prost`.

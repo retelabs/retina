@@ -55,13 +55,13 @@ const SPLASH_DURATION: std::time::Duration = std::time::Duration::from_millis(40
 async fn show_splash(
     terminal: &mut ratatui::DefaultTerminal,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // `None` if decoding/encoding the real logo failed for any reason —
-    // draw_splash falls back to the computed ASCII badge rather than the
-    // whole TUI refusing to start over a missing image. Sized against the
-    // real terminal (not a fixed guess): a `Protocol` doesn't resize after
-    // creation, so picking a size that doesn't fit *before* encoding is
-    // exactly the bug that made the logo not render at all on a common
-    // 80×24 terminal (crates/tui/src/logo.rs).
+    // `None` if decoding the real logo failed for any reason — draw_splash
+    // falls back to the computed ASCII badge rather than the whole TUI
+    // refusing to start over a missing image. Sized against the real
+    // terminal (not a fixed guess): the ASCII art is sampled at a fixed
+    // resolution up front, not resized after the fact, so picking a size
+    // that doesn't fit *before* sampling is exactly the bug that made the
+    // logo not render at all on a common 80×24 terminal (crates/tui/src/logo.rs).
     let logo = tui::logo::load(terminal.size()?);
     let start = std::time::Instant::now();
     loop {

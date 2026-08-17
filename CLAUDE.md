@@ -629,6 +629,22 @@ via `cargo test -p clickhouse-sink -p query-api -- --ignored` contre
 relu via `GET /traces/{trace_id}` et `GET /metrics/summary`, coût exact
 au centime près.
 
+**Câblage `gen_ai.usage.*`/`request.model` côté the-client — fait, vérifié en
+conditions réelles (2026-08-17).** Une fois `dev` poussé (`926e6a5`), the-client a
+câblé ses 3 clients IA pour poser `gen_ai.provider.name`/`request.model`/
+`usage.input_tokens`/`usage.output_tokens` sur l'`Activity` (leur commit
+`d1c632f`, noms vérifiés contre `AGENT_RUN_KNOWN_KEYS` réel plutôt que
+devinés) puis reconstruit `kernel`/`query-api` depuis leur propre clone.
+Test réel via `/api/ai/triage` : `provider_name=anthropic`,
+`request_model=claude-sonnet-5`, `input_tokens=229`, `output_tokens=7` →
+`cost_usd=0.000528`, vérifié à la main (`229×$2/M + 7×$10/M`) et exact.
+`GET /metrics/summary` agrège correctement `total_cost_usd` pour
+`agent_run` (le seul kind que the-client émet) ; `model_call`/`tool_call` restent
+`null`, attendu puisque the-client ne les émet pas. Premier chiffrage de coût $
+réel de bout en bout depuis un vrai appel client, pas seulement un span
+synthétique — clôt le chantier ouvert en début de journée (l'écart constaté
+avec LangSmith).
+
 ## Repères techniques
 
 - Ingestion OTLP : `tonic` + `prost`.

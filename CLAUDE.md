@@ -745,13 +745,28 @@ de faire confiance à la forme des données, même prudence que le serveur qui
 ne valide pas non plus un arbre à racine unique.
 
 **Intro stylisée ajoutée après premier retour utilisateur** ("très
-minimaliste") : écran de démarrage ~2.2s (passable sur n'importe quelle
-touche), logo V calculé par arithmétique ligne/colonne plutôt que tapé à la
-main en ASCII art (garantit la symétrie quelle que soit la hauteur, pas de
-risque de désalignement à l'œil) — `ui::venice_glyph_lines`. Couleur teal
-(`Color::Rgb`) approximant celle du vrai logo, appliquée aussi aux bordures/
-titres de toutes les vues (`ui::venice_block`) pour une identité visuelle
-cohérente, pas seulement l'écran d'intro.
+minimaliste") : écran de démarrage (passable sur n'importe quelle touche),
+logo calculé par arithmétique ligne/colonne plutôt que tapé à la main en
+ASCII art (garantit la symétrie quelle que soit la hauteur, pas de risque
+de désalignement à l'œil). Couleur teal (`Color::Rgb`) approximant celle du
+vrai logo, appliquée aussi aux bordures/titres de toutes les vues
+(`ui::venice_block`) pour une identité visuelle cohérente, pas seulement
+l'écran d'intro.
+
+**Deuxième retour** ("un peu plus long", "reproduis le logo à l'identique")
+: durée portée à 4s ; `ui::venice_glyph_lines` (juste le V) remplacé par
+`ui::venice_badge_lines`, qui recompose les mêmes éléments que le vrai
+logo — anneau circulaire (équation d'ellipse par ligne, corrigée de
+l'aspect ratio des caractères terminal ~2:1 pour ne pas rendre un ovale),
+4 nœuds aux coins, un lattice de canaux fins avec nœuds circulaires en
+arrière-plan, le V en premier plan avec sa petite queue/nœud au point bas
+— composé en couches sur un `Canvas` (grille de caractères) plutôt qu'un
+seul motif calculé d'un coup. **Précision honnête donnée à l'utilisateur** :
+"à l'identique" au pixel près n'a pas vraiment de sens ici — le lattice du
+PNG source est un tracé organique généré par DALL-E, pas une forme
+paramétrique reproductible exactement en ASCII ; ce qui est livré est une
+interprétation stylisée fidèle à la composition (mêmes éléments, mêmes
+proportions relatives), pas une copie pixel par pixel.
 
 Vérifié à quatre niveaux : 5 tests unitaires (`span_tree`/`humanize_ago`,
 y compris un cas de cycle à 2 nœuds et une référence de parent hors trace)

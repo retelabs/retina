@@ -50,7 +50,7 @@ async fn refresh_metrics(client: &ApiClient, app: &mut App) {
 /// Shown for a fixed duration or until any key is pressed — a splash isn't
 /// worth making someone wait through, so any key skips it rather than
 /// forcing the full duration.
-const SPLASH_DURATION: std::time::Duration = std::time::Duration::from_millis(2200);
+const SPLASH_DURATION: std::time::Duration = std::time::Duration::from_millis(4000);
 
 async fn show_splash(
     terminal: &mut ratatui::DefaultTerminal,

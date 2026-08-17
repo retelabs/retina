@@ -23,41 +23,168 @@ fn now_unix_nano() -> u64 {
         .unwrap_or(0)
 }
 
-/// Draws the `V` from the real logo as ASCII art — computed from row/column
-/// arithmetic rather than a hand-typed multi-line string literal, so it's
-/// guaranteed symmetric regardless of `height` instead of relying on
-/// getting every space exactly right by eye.
-fn venice_glyph_lines(height: u16) -> Vec<Line<'static>> {
-    let height = height as usize;
-    let glyph_width = 2 * height.saturating_sub(1) + 3; // +3: 2-wide stroke, meets at the point
-    let stroke = 2usize;
+/// A `width × height` character canvas — lets the badge be composed in
+/// layers (ring, then interior canal lines, then the bold `V` on top, so
+/// later layers paint over earlier ones exactly like the real logo's
+/// z-order) instead of computing one flat pattern in a single pass.
+struct Canvas {
+    cells: Vec<Vec<char>>,
+    width: i32,
+    height: i32,
+}
 
-    (0..height)
-        .map(|row| {
-            let left = row;
-            let right = glyph_width.saturating_sub(1).saturating_sub(row);
-            let mut cells = vec![' '; glyph_width];
-            for w in 0..stroke {
-                if let Some(c) = cells.get_mut(left + w) {
-                    *c = '█';
-                }
-                if right >= w
-                    && let Some(c) = cells.get_mut(right - w)
-                {
-                    *c = '█';
-                }
+impl Canvas {
+    fn new(width: i32, height: i32) -> Self {
+        Self {
+            cells: vec![vec![' '; width.max(0) as usize]; height.max(0) as usize],
+            width,
+            height,
+        }
+    }
+
+    fn set(&mut self, row: i32, col: i32, ch: char) {
+        if row >= 0 && row < self.height && col >= 0 && col < self.width {
+            self.cells[row as usize][col as usize] = ch;
+        }
+    }
+
+    fn into_lines(self) -> Vec<Line<'static>> {
+        self.cells
+            .into_iter()
+            .map(|row| {
+                let text: String = row.into_iter().collect();
+                Line::from(Span::styled(text, Style::default().fg(VENICE_TEAL)))
+                    .alignment(Alignment::Center)
+            })
+            .collect()
+    }
+}
+
+/// Stylized ASCII rendition of `UI/assets/logos/logo_venice_v1.png` — same
+/// compositional elements (ring, 4 corner nodes, an interior lattice of
+/// thin canal lines with node dots, a bold `V` with a small tail at its
+/// point), not a pixel-identical reproduction: the source PNG's lattice is
+/// organic/hand-varied linework, which doesn't have a single "correct"
+/// parametric form to reproduce exactly in monospace text. Every element
+/// here is computed from row/column arithmetic (circle equation, line
+/// interpolation) rather than typed by eye, so proportions stay correct at
+/// any `height` instead of only looking right at whichever size it was
+/// eyeballed against.
+fn venice_badge_lines(height: u16) -> Vec<Line<'static>> {
+    let h = (height as i32).max(10);
+    let radius_y = h as f64 / 2.0;
+    // Terminal character cells are roughly twice as tall as they are wide —
+    // without this correction a "circle" computed with equal x/y radius
+    // renders as a tall oval.
+    let aspect = 2.0;
+    let radius_x = radius_y * aspect;
+    let width = (radius_x * 2.0).round() as i32 + 1;
+    let cx = width / 2;
+    let cy = h / 2;
+
+    let mut canvas = Canvas::new(width, h);
+
+    let ellipse_dx = |dy: f64| -> Option<f64> {
+        let t = dy / radius_y;
+        if t.abs() > 1.0 {
+            None
+        } else {
+            Some(radius_x * (1.0 - t * t).sqrt())
+        }
+    };
+
+    // Ring.
+    for row in 0..h {
+        let dy = row as f64 - cy as f64;
+        if let Some(dx) = ellipse_dx(dy) {
+            canvas.set(row, cx - dx.round() as i32, '●');
+            canvas.set(row, cx + dx.round() as i32, '●');
+        }
+    }
+
+    // 4 corner nodes, one per quadrant, matching the real logo's dots sitting
+    // just inside the ring near its top/bottom.
+    for &dy_frac in &[-0.78_f64, 0.78] {
+        let dy = radius_y * dy_frac;
+        if let Some(dx) = ellipse_dx(dy) {
+            let row = (cy as f64 + dy).round() as i32;
+            canvas.set(row, cx - dx.round() as i32, '◆');
+            canvas.set(row, cx + dx.round() as i32, '◆');
+        }
+    }
+
+    // Interior canal lattice: a handful of thin diagonals crossing behind
+    // the V, each with a node dot near its midpoint — evokes the real
+    // logo's secondary canals without claiming to reproduce their exact
+    // (hand-varied) paths.
+    let draw_diagonal = |canvas: &mut Canvas, from: (i32, i32), to: (i32, i32), node_at: f64| {
+        let steps = (to.0 - from.0).abs().max((to.1 - from.1).abs()).max(1);
+        for i in 0..=steps {
+            let t = i as f64 / steps as f64;
+            let row = from.0 + ((to.0 - from.0) as f64 * t).round() as i32;
+            let col = from.1 + ((to.1 - from.1) as f64 * t).round() as i32;
+            canvas.set(row, col, if row % 2 == 0 { '─' } else { '╲' });
+            if (t - node_at).abs() < 1.0 / steps as f64 {
+                canvas.set(row, col, '○');
             }
-            let text: String = cells.into_iter().collect();
-            Line::from(Span::styled(text, Style::default().fg(VENICE_TEAL)))
-                .alignment(Alignment::Center)
-        })
-        .collect()
+        }
+    };
+    let r = radius_x.min(radius_y * aspect) * 0.85;
+    draw_diagonal(
+        &mut canvas,
+        (cy - (radius_y * 0.5) as i32, cx - r as i32),
+        (cy, cx),
+        0.5,
+    );
+    draw_diagonal(
+        &mut canvas,
+        (cy - (radius_y * 0.5) as i32, cx + r as i32),
+        (cy, cx),
+        0.5,
+    );
+    draw_diagonal(
+        &mut canvas,
+        (cy + (radius_y * 0.6) as i32, cx - r as i32),
+        (cy + (radius_y * 0.2) as i32, cx - (r * 0.3) as i32),
+        0.5,
+    );
+    draw_diagonal(
+        &mut canvas,
+        (cy + (radius_y * 0.6) as i32, cx + r as i32),
+        (cy + (radius_y * 0.2) as i32, cx + (r * 0.3) as i32),
+        0.5,
+    );
+
+    // The bold V, painted last so it sits in front of the lattice — sized
+    // to span most of the circle's interior, same converging-stroke
+    // arithmetic as before rather than a hand-typed shape.
+    let v_height = (radius_y * 1.5).round() as i32;
+    let v_top = cy - v_height + (radius_y * 0.35) as i32;
+    let v_glyph_width = 2 * (v_height - 1) + 3;
+    for vr in 0..v_height {
+        let left = vr;
+        let right = v_glyph_width - 1 - vr;
+        for w in 0..2 {
+            canvas.set(v_top + vr, cx - v_glyph_width / 2 + left + w, '█');
+            canvas.set(v_top + vr, cx - v_glyph_width / 2 + right - w, '█');
+        }
+    }
+    // Small tail continuing below the V's point down to the ring, with a
+    // node where it meets the bottom — matches the real logo's point not
+    // stopping abruptly at the V's apex.
+    let tail_start = v_top + v_height - 1;
+    for i in 0..3 {
+        canvas.set(tail_start + i, cx, '█');
+    }
+    canvas.set(tail_start + 3, cx, '○');
+
+    canvas.into_lines()
 }
 
 pub fn draw_splash(frame: &mut Frame) {
     let area = frame.area();
-    let glyph_height = area.height.saturating_sub(8).clamp(4, 12);
-    let mut lines = venice_glyph_lines(glyph_height);
+    let badge_height = area.height.saturating_sub(10).clamp(10, 18);
+    let mut lines = venice_badge_lines(badge_height);
     lines.push(Line::default());
     lines.push(
         Line::from(Span::styled(

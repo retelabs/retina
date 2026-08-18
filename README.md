@@ -39,3 +39,7 @@ Navigation : `Tab` change de vue (Traces/Detail/Metrics/Help), `↑`/`↓`
 feuillette les pages d'aide, `r` rafraîchit la vue courante, `Échap`
 revient à la liste, `q` quitte. L'interface elle-même (labels, aide) est
 en anglais ; cette documentation reste en français comme le reste du repo.
+
+## Licence
+
+Propriétaire — tous droits réservés, voir [LICENSE](LICENSE).

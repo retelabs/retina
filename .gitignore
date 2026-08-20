@@ -12,3 +12,4 @@
 # Env locaux
 .env
 .env.local
+docker/.env.prod

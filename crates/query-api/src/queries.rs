@@ -71,6 +71,7 @@ struct KindMetricsRow {
     span_count: u64,
     total_input_tokens: Option<u64>,
     total_output_tokens: Option<u64>,
+    total_cost_usd: Option<f64>,
 }
 
 /// "Agréger quelques métriques de base" (dossier étape 4) — span counts and
@@ -82,7 +83,8 @@ pub async fn metrics_summary(client: &Client) -> clickhouse::error::Result<Metri
     let rows: Vec<KindMetricsRow> = client
         .query(
             "SELECT kind, count() AS span_count, sum(input_tokens) AS total_input_tokens, \
-             sum(output_tokens) AS total_output_tokens FROM spans GROUP BY kind ORDER BY kind",
+             sum(output_tokens) AS total_output_tokens, sum(cost_usd) AS total_cost_usd \
+             FROM spans GROUP BY kind ORDER BY kind",
         )
         .fetch_all()
         .await?;
@@ -103,6 +105,7 @@ pub async fn metrics_summary(client: &Client) -> clickhouse::error::Result<Metri
                 span_count: r.span_count,
                 total_input_tokens: r.total_input_tokens.unwrap_or(0),
                 total_output_tokens: r.total_output_tokens.unwrap_or(0),
+                total_cost_usd: r.total_cost_usd,
             })
             .collect(),
         spans_with_warnings,

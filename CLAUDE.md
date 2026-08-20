@@ -312,12 +312,755 @@ Avec ceci, les quatre limites produit identifiées le 2026-08-15 sont
 comblées (authentification, activation des plugins par config, isolation de
 l'exécution des plugins, rétention/évolution de schéma).
 
+## Exploration cloud/infra — objectif d'apprentissage, pas un choix de fournisseur (2026-08-15, en cours)
+
+Dossier section 5 laissait "GCP vs Azure" ouvert. Discussion avec
+l'utilisateur : ce qui compte vraiment n'est pas le logo du cloud mais
+acquérir, en codant en direct, les concepts et la méthode pour construire —
+et chiffrer — ses propres briques d'infrastructure plutôt que de consommer
+des services managés tout faits. Le choix du fournisseur reste ouvert,
+volontairement secondaire à cet objectif.
+
+**Critère précisé le 2026-08-15 (fin de journée)** : le rejet des services
+managés n'est pas catégorique — c'est spécifiquement le coût **facturé
+indépendamment de l'usage** qui doit être évité (frais de control plane
+Kubernetes managé même à zéro pod, bases managées facturées à l'instance
+provisionnée type RDS/ClickHouse Cloud, capacité réservée type DynamoDB
+provisioned/NAT gateway à l'heure). Un vrai pay-per-use (facturé à l'appel,
+zéro usage = zéro facture) ou un coût fixe déjà minimal et accepté (une
+VM/VPS pas chère qu'on paie de toute façon, cf. le choix "hardware nu +
+Docker" déjà fait) restent acceptables — le "gâchis" y est plafonné et
+connu d'avance, pas une surprise de facturation. Implication directe pour
+le chantier "modèle de coût" à venir : calculer le **coût à usage zéro** de
+chaque option, pas seulement à volume attendu — c'est ce chiffre qui doit
+dominer la comparaison tant que le volume réel reste proche de zéro.
+
+**Proposition d'architecture validée comme point de départ (2026-08-16)** :
+cœur auto-hébergé (VM + `orchestrator` + ClickHouse/kernel/query-api)
+commun aux deux options envisagées, extensions "hybrides" pay-per-use
+(registre de conteneurs, edge/CDN, stockage objet pour les backups) ajoutées
+une par une seulement si elles comblent un vrai manque — diagramme dans
+`docs/interfaces/` à venir si le choix se stabilise. Testé et ajusté au fil
+des découvertes, pas figé. **Deuxième critère explicite** : même pour une
+extension pay-per-use légitime (coût nul à usage nul), préférer la coder
+nous-mêmes quand la valeur d'apprentissage le justifie — le critère de coût
+(section précédente) reste ce qui tranche quand l'effort de réécriture
+dépasse ce que ça enseigne (ex. la durabilité du stockage objet est un vrai
+chantier d'ingénierie, pas juste un exercice).
+
+`crates/orchestrator` — un control plane "maison" en Rust, contre l'API
+Engine de Docker directement (crate `bollard` 0.21.0), pas une enveloppe de
+`docker compose`. Contrat vérifié en lisant le vrai code source de
+`bollard`/`bollard-stubs` depuis le registre Cargo local (pas seulement
+docs.rs, qui n'a pas donné les noms de champs exacts) — documenté dans
+`docs/interfaces/docker-engine-api.md`. V0 volontairement réduit à un seul
+service (`ClickHouse`, le plus simple des trois du dossier étape 6 — pas de
+build d'image maison) : `ensure_running`/`status`/`wait_healthy`/`teardown`,
+tous **idempotents** (propriété centrale d'un vrai control plane — une
+boucle de réconciliation doit pouvoir reconverger sans se soucier de l'état
+de départ). `wait_healthy` est une boucle observer/comparer/attendre en
+miniature, le même principe qu'un contrôleur Kubernetes/Nomad réduit à
+l'essentiel.
+
+Trois trouvailles réelles en lisant le code source plutôt qu'en devinant :
+`create_image` (pull) retourne un `Stream` paresseux, pas un `Future` — rien
+ne se passe tant qu'il n'est pas consommé ; les types de bollard ont changé
+de nom entre versions (`ContainerCreateBody` pas `Config<String>`) ; et
+distinguer "conteneur jamais créé" de "existe mais arrêté" demande
+`list_containers(all: true)` filtré par nom, pas `inspect_container` seul.
+
+Vérifié contre le vrai démon Docker local : cycle de vie complet
+(`cargo run -p orchestrator`) et test d'intégration d'idempotence
+(`cargo test -p orchestrator -- --ignored`) — `ensure_running` rappelé sur
+un conteneur déjà sain ne casse rien, `teardown` rappelé sur un conteneur
+déjà absent non plus.
+
+**Étendu à `kernel`/`query-api` — fait.** `ManagedService` gagne
+`image_source` (`Registry` vs `Local` — `kernel`/`query-api` doivent déjà
+être construits via `docker/docker-compose.stack.yml`, ce control plane ne
+construit pas d'image lui-même), `ports`, `depends_on`. `deploy_all` trie
+les services par dépendance (tri topologique, algorithme de Kahn,
+déterministe) puis, dans cet ordre, `ensure_running` + `wait_healthy` avant
+le suivant — au moment où `kernel`/`query-api` démarrent, ClickHouse est
+déjà sain, exactement ce que `depends_on: condition: service_healthy` donne
+sous `docker compose`, reconstruit depuis l'API.
+
+Trouvaille structurante : les conteneurs du réseau `bridge` par défaut de
+Docker ne se résolvent **pas** par nom — seul un réseau défini par
+l'utilisateur le permet. `ensure_network` crée un tel réseau et
+`ensure_running` y attache chaque conteneur (`HostConfig.network_mode`)
+pour que `kernel` joigne `CLICKHOUSE_URL=http://<nom du conteneur>:8123`.
+**Deuxième trouvaille, une vraie race, pas construite exprès** : la propre
+suite de tests du crate (deux tests qui appellent `ensure_network` sur le
+même nom, tournant en parallèle par défaut) a fait échouer le
+vérifier-puis-créer initial avec un `409` — corrigé en traitant "already
+exists" comme un succès, même logique que le `304` déjà géré pour
+`start_container`. Reproduit et corrigé, pas juste contourné dans le test.
+
+Vérifié bout en bout réel, pas seulement `docker inspect` :
+`cargo run -p orchestrator -- --keep-running` déploie les 3 services, un
+vrai rejeu gRPC (`fraudos-replay`) contre `localhost:4317` et une vraie
+requête HTTP authentifiée contre `localhost:8080/metrics/summary`
+confirment que `kernel` a réellement écrit dans ClickHouse via le réseau
+partagé et que `query-api` relit les mêmes données. Plus 4 tests unitaires
+(`topological_order`, sans Docker) et 2 tests d'intégration `--ignored`
+contre un vrai démon, chacun relancé plusieurs fois pour confirmer que le
+fix de la race n'était pas un coup de chance.
+
+**API HTTP — fait.** `crates/orchestrator/src/main.rs` est maintenant un
+vrai service (`axum::serve`, `POST /deploy`/`GET /status`/`POST /teardown`),
+même layering que `crates/query-api` (routes/DTOs séparés du client Docker)
+pour la cohérence du workspace. `deploy`/`teardown` restent idempotents à
+travers la couche HTTP — même garantie que `docker_client`, pas perdue en
+l'enveloppant. Mapping d'erreur distingué par code HTTP (400 dépendance
+invalide, 422 image locale manquante, 504 timeout de santé, 500 erreur
+Docker générique) plutôt que tout renvoyer en 500.
+
+**Pas d'authentification, délibérément** : outil d'apprentissage local,
+`ORCHESTRATOR_BIND` par défaut sur `127.0.0.1` (pas `0.0.0.0` comme
+kernel/query-api) — noté explicitement que s'il tourne un jour sur un
+réseau atteignable, il lui faut le même traitement que kernel/query-api
+d'abord, vu qu'il peut arrêter des conteneurs.
+
+Vérifié à deux niveaux : `tower::ServiceExt::oneshot` contre le vrai
+`Router` (cycle `/status` → `/deploy` → `/deploy` de nouveau (idempotence)
+→ `/teardown`, contre la vraie pile à 3 services) ; et manuellement,
+serveur réellement lancé, `curl` contre les 3 routes puis un vrai rejeu
+gRPC (`fraudos-replay`) et une vraie requête `query-api` confirmant que les
+conteneurs déployés par l'API HTTP fonctionnent pour de vrai, pas
+seulement `status: "Healthy"`.
+
+**Construction d'image via l'API — fait.** `kernel`/`query-api` utilisent
+`ImageSource::Build { context, dockerfile }` — plus de `docker build`
+externe requis avant `deploy_all`. `crates/orchestrator/src/image_build.rs`
+construit un tar du contexte (racine du repo, résolue via
+`CARGO_MANIFEST_DIR`) en mémoire, respectant `.dockerignore` mais
+volontairement réduit (matching par composant à n'importe quelle
+profondeur, pas d'ancrage `/` ni de négation `!` — le vrai `.dockerignore`
+de ce repo n'a besoin ni de l'un ni de l'autre). `ensure_image` envoie ce
+tar à `POST /build` (`bollard::Docker::build_image`) et consomme le flux de
+progression jusqu'à la fin ou une erreur.
+
+Construit à chaque déploiement, pas seulement si l'image est absente — même
+sémantique que `docker build`/`docker compose build`, le cache de couches
+de Docker rend un contexte inchangé rapide à reconstruire. Limite connue,
+documentée : un conteneur déjà démarré depuis une image plus ancienne n'est
+pas recréé automatiquement après un rebuild, il faut le détruire d'abord.
+
+Trouvaille réelle : `BuildInfo` n'a pas de champ `error` plat comme
+`CreateImageInfo` — seulement `error_detail: Option<ErrorDetail>`. Deviné
+faux par analogie avec `create_image` en écrivant le code une première
+fois, corrigé en relisant le vrai struct dans `bollard-stubs`.
+
+Vérifié contre un vrai démon Docker : un test dédié construit réellement
+`docker/kernel.Dockerfile` via l'API (`cargo build --release -p kernel`
+tourne pour de vrai dans le conteneur builder, ~64s à froid) et confirme
+que l'image produite a le bon `ENTRYPOINT`. Bout en bout réel :
+`POST /deploy` construit maintenant `kernel`/`query-api` lui-même avant de
+les démarrer, suivi d'un vrai rejeu gRPC (`fraudos-replay`) et d'une vraie
+requête `query-api` confirmant que l'image construite par notre propre code
+fonctionne réellement — plus seulement testé, le prérequis externe
+`scripts/dev-stack.sh build` a disparu pour de vrai.
+
+**Authentification sur `crates/orchestrator` — fait (2026-08-16).** Même
+mécanisme que `kernel`/`query-api` (`docs/interfaces/kernel-auth.md`) :
+`ORCHESTRATOR_API_KEY`, échec fermé au démarrage, header `authorization:
+Bearer <token>`. Décision délibérée : `src/auth.rs` dupliqué depuis
+`crates/query-api/src/auth.rs` plutôt que factorisé dans un crate partagé —
+deuxième service axum à en avoir besoin, pas un troisième, chaque crate
+reste auto-suffisant. `ORCHESTRATOR_BIND` reste par défaut sur `127.0.0.1` —
+l'authentification s'ajoute à cette prudence, ne la remplace pas.
+
+Vérifié à deux niveaux : `cargo test -p orchestrator -- --ignored`
+(nouveau test de rejet 401, test HTTP existant mis à jour avec le header)
+contre le vrai `Router` ; et bout en bout réel — lancé sans
+`ORCHESTRATOR_API_KEY` → panic avant toute connexion Docker, lancé avec →
+`curl` sans header confirmé `401`, avec le bon header un cycle
+`/deploy`→`/status`→`/teardown` complet, suivi d'un vrai rejeu gRPC
+(`fraudos-replay`) et d'une vraie requête `query-api` confirmant que la
+pile déployée derrière l'auth fonctionne réellement.
+
+Avec ceci, les deux lacunes de sécurité identifiées sur `crates/orchestrator`
+(pas d'auth, prérequis d'image externe) sont comblées.
+
+**Modèle de coût réel — fait (2026-08-16).** `crates/cost-model` rend
+vérifiable avec de vrais nombres le critère posé la veille (comparer par le
+**coût à usage zéro**). Deux catégories d'entrées, chacune vérifiée à sa
+façon : octets/span **mesurés** contre un vrai ClickHouse
+(`system.parts.data_compressed_bytes`, pas une estimation analytique
+depuis le schéma qui ignorerait la compression réelle) ; prix VM/stockage
+objet/CDN **vérifiés contre les pages officielles réelles**, pas des
+agrégateurs (une première recherche via agrégateurs a donné des chiffres
+Hetzner contradictoires, écartés). Détail complet des sources dans
+`docs/cost-model.md`.
+
+Résultat concret, pas juste une méthode : à `0` spans/jour les extensions
+hybrides tombent exactement à `0` — la preuve numérique du critère
+d'hier. Au repère du dossier pour l'arbitrage ClickHouse managé/auto-hébergé
+(100 000 spans/jour), le stockage accumulé sur 90 jours reste sous le
+palier gratuit Backblaze B2 — le coût qui domine reste la VM (identique
+entre "100% perso" et "hybride"), pas les extensions.
+
+Vérifié à deux niveaux : tests unitaires sur `report.rs` (fonctions pures,
+sans Docker ni ClickHouse) et un test `--ignored` qui mesure réellement
+contre un vrai ClickHouse contenant les fixtures `fraudos-replay`/
+`oncology-replay` déjà rejouées. `cargo run -p cost-model` lu à la main
+contre les données réelles de la session — le stockage croît avec le
+volume, la VM reste fixe, comme attendu.
+
+Pas encore fait, notes explicites dans `docs/cost-model.md` : egress du
+stockage objet au-delà du palier gratuit, décomposition du coût de calcul
+par service (la VM est traitée comme un coût fixe unique), comparaison à
+d'autres fournisseurs VM (OVH, Scaleway, DigitalOcean) — Hetzner est un
+premier point de repère vérifié, pas une décision de fournisseur.
+
 ## Hors périmètre volontaire du MVP (dossier section 4)
 
 Multi-tenancy, haute disponibilité/multi-région, couverture exhaustive des
 conventions GenAI (retrieval, mémoire…), couche d'analyse agentique
 (RCA/anomalies), dashboard riche, multi-cloud simultané. Ne pas anticiper ces
 besoins dans le code du kernel MVP.
+
+## Documentation client (2026-08-16)
+
+Cartographie de l'état du projet avec l'utilisateur : aucun `README.md` à
+la racine n'existait, et `docs/interfaces/` documente des contrats vérifiés
+pour nous (source, date de vérification) — pas une doc orientée "comment
+utiliser Venice depuis mon application". `README.md` (racine, nouveau) et
+`docs/client-integration.md` comblent ça : synthèse orientée client de
+contrats déjà vérifiés (mapping `gen_ai.operation.name` → événement kernel
+avec ses champs requis exacts, tiré du vrai code de dispatch
+`crates/otlp-receiver/src/convert.rs` plutôt que reformulé de mémoire ;
+convention d'attributs `fraudos.*`/`oncology.*` ; les 3 endpoints
+`query-api` avec la liste complète des champs de `SpanDto`), rien de
+nouveau tranché ici. Pointeurs vers `docs/interfaces/` pour qui veut le
+détail vérifié complet, pas de duplication.
+
+Autre constat de la cartographie, traité le jour même : `docs/adr/` n'avait
+que le template, aucune ADR n'avait jamais été écrite malgré `/adr` — les
+4 questions ouvertes listées dans `docs/adr/README.md` (dossier section 5)
+étaient en réalité déjà tranchées, juste jamais formalisées en ADR.
+Rédigées rétroactivement : `0001` (multi-tenant hors périmètre),
+`0002` (modèle d'hébergement — auto-hébergé, fournisseur toujours différé),
+`0003` (ClickHouse auto-hébergé), `0004` (plugins natifs, WASM différé pas
+rejeté). Aucune nouvelle décision tranchée par l'exercice — une
+rétro-documentation, pas une nouvelle négociation.
+
+## Premier client réel branché : client-project (the-client) (2026-08-17, en cours)
+
+Venice sert désormais de kernel d'observabilité pour un vrai projet client
+(`a separate client project`,
+SaaS santé .NET, agents triage/résumé/conformité/enrichissement d'appel,
+plugin `MedicalPlugin` branché temporairement dessus — le nom "oncology"
+sera généralisé plus tard). Le câblage OTLP/gRPC fonctionne en conditions
+réelles. En creusant l'écart avec ce qu'un outil comme LangSmith donne, deux
+manques sont ressortis et scopés avec l'utilisateur avant tout code (règle
+permanente du projet) : coût $ par span, et suivi de conversation/thread.
+
+**Suivi de conversation** : `conversation_id` existe déjà dans le schéma
+mais rien ne le peuplait côté the-client. Exploration réelle du code the-client (pas
+supposée) : `AgentOrchestrator.RunAsync` est le seul point d'ouverture du
+span `invoke_agent` pour les 4 agents ; seul l'enrichissement d'appel
+(`EnrichCallWithAiCommand`) porte un id métier réel (`CallId`) sur ce
+chemin — triage/résumé/conformité sont des endpoints "playground" texte
+libre (`RunAgentQuery`/`AiController`), sans identifiant de domaine.
+Fausse piste éliminée : `OutboxEntry.CorrelationId` existe dans leur modèle
+mais n'est jamais peuplé. **Décision côté the-client (leur équipe, pas Venice)**,
+vérifiée contre leur frontend aussi (`AiComponent`, aucun `callId` sur ce
+chemin) : on laisse tel quel — construire le lien manquant serait une vraie
+feature de navigation, hors scope pour l'instant. Conséquence côté kernel :
+seul l'agent d'enrichissement d'appel portera jamais un `conversation_id`
+non-null pour the-client dans l'état actuel, pas une limite à corriger côté
+Venice.
+
+**Calculateur de coût $ — fait.** Trois questions scopées avec l'utilisateur
+avant de coder (`docs/interfaces/cost-calculation.md`, détail complet) :
+table de prix statique versionnée dans le repo (pas fournie par le client),
+calcul une seule fois à l'ingestion (pas à la requête), un changement de
+tarif ne recalcule jamais l'historique déjà stocké. Nouveau crate
+`crates/pricing` (dépend seulement de `kernel-model` pour `ProviderName`),
+appelé depuis `crates/clickhouse-sink/src/row.rs` — le point où
+`provider_name`/modèle/tokens sont déjà rassemblés par type d'événement,
+donc kernel-model reste une dérivation pure de semconv sans logique
+business, et `otlp-receiver::convert.rs` reste un mapping protocole pur.
+Nouvelle colonne `spans.cost_usd Nullable(Float64)`
+(migration `0003_add_cost_usd.sql`), exposée dans `SpanDto.cost_usd` et
+`MetricsSummaryDto.by_kind[].total_cost_usd`.
+
+**Trouvaille structurante, vérifiée contre `docs/interfaces/semconv-genai.md`
+avant de coder (déjà documentée à l'étape 1, pas redécouverte)** : la
+comptabilité des tokens de cache diffère par fournisseur — Anthropic exclut
+les tokens de cache d'`input_tokens` (à rajouter), OpenAI/Azure les
+incluent déjà. Une formule de coût unique aurait été fausse pour l'un des
+deux. `CacheAccounting` (`IncludedInInput`/`AdditionalToInput`) encode
+cette différence explicitement plutôt que de deviner une formule
+universelle.
+
+Prix vérifiés contre les vraies pages officielles le 2026-08-17 (pas
+depuis la mémoire, règle permanente du projet) : OpenAI
+(`developers.openai.com/api/docs/pricing`), Anthropic
+(`platform.claude.com/docs/en/about-claude/pricing`). Groq (demandé
+explicitement par l'utilisateur) **non tarifé, délibérément** : la page
+officielle n'a renvoyé aucun tableau exploitable et la doc console a
+renvoyé 404 — seuls des agrégateurs tiers avaient des chiffres, écartés
+pour la même raison que la divergence Hetzner déjà rencontrée dans
+`docs/cost-model.md` (chiffres non fiables). AWS Bedrock/watsonx/GCP/Azure/
+Cohere/Perplexity/xAI/DeepSeek/Mistral/Moonshot : non tarifés non plus, non
+demandés et non vérifiés cette session — un span de ces fournisseurs reste
+`cost_usd = NULL`, jamais un mauvais chiffre.
+
+Lacune connue, documentée plutôt que masquée : aucune télémétrie réelle
+n'existait pour confirmer le format exact des chaînes `request_model`/
+`response_model` envoyées en pratique (the-client ne peuple aujourd'hui aucun des
+deux) — la table de prix fait un lookup par correspondance exacte, à
+vérifier contre de vraies réponses d'API avant de faire confiance à sa
+couverture au-delà des montants par token eux-mêmes.
+
+Vérifié à deux niveaux : 7 tests unitaires `crates/pricing` (comptabilité
+de cache par fournisseur, modèle/provider inconnu → `None` pas une erreur,
+table de prix cohérente avec `ProviderName::as_str()`) et 4 nouveaux tests
+`clickhouse-sink`/`query-api` ; **`sum(cost_usd)` vérifié empiriquement
+contre un vrai ClickHouse** (pas supposé) : `NULL` sur un groupe vide *et*
+sur un groupe entièrement `NULL` — d'où `total_cost_usd: Option<f64>`,
+délibérément pas ramené à `0.0` comme les totaux de tokens, pour ne pas
+confondre "aucun span tarifé" avec "coût réellement nul". Bout en bout réel
+via `cargo test -p clickhouse-sink -p query-api -- --ignored` contre
+`scripts/dev-clickhouse.sh up` : un span `gpt-4o-mini` réellement inséré,
+relu via `GET /traces/{trace_id}` et `GET /metrics/summary`, coût exact
+au centime près.
+
+**Câblage `gen_ai.usage.*`/`request.model` côté the-client — fait, vérifié en
+conditions réelles (2026-08-17).** Une fois `dev` poussé (`926e6a5`), the-client a
+câblé ses 3 clients IA pour poser `gen_ai.provider.name`/`request.model`/
+`usage.input_tokens`/`usage.output_tokens` sur l'`Activity` (leur commit
+`d1c632f`, noms vérifiés contre `AGENT_RUN_KNOWN_KEYS` réel plutôt que
+devinés) puis reconstruit `kernel`/`query-api` depuis leur propre clone.
+Test réel via `/api/ai/triage` : `provider_name=anthropic`,
+`request_model=claude-sonnet-5`, `input_tokens=229`, `output_tokens=7` →
+`cost_usd=0.000528`, vérifié à la main (`229×$2/M + 7×$10/M`) et exact.
+`GET /metrics/summary` agrège correctement `total_cost_usd` pour
+`agent_run` (le seul kind que the-client émet) ; `model_call`/`tool_call` restent
+`null`, attendu puisque the-client ne les émet pas. Premier chiffrage de coût $
+réel de bout en bout depuis un vrai appel client, pas seulement un span
+synthétique — clôt le chantier ouvert en début de journée (l'écart constaté
+avec LangSmith).
+
+**Évals sans LangSmith — volet 1 (déterministe) fait, volet 2 en attente
+(2026-08-17).** Deuxième manque identifié par l'utilisateur the-client face à
+LangSmith : des évals dans le même esprit déterministe que `MedicalPlugin`
+plutôt que le pattern LLM-as-judge de LangSmith — argument économique
+explicite (des boucles d'eval en CI avec juge LLM répété coûtent cher à
+chaque run, maximiser le déterministe réduit ce coût directement).
+
+Cas réels demandés et reçus de the-client (pas inventés) pour les 3 agents
+(triage/summary/compliance) avant de designer quoi que ce soit — un seul
+avait un référentiel canonique comparable à une sortie catégorielle
+(`crates/plugin-triage-eval`, détail complet et sources dans
+`docs/interfaces/triage-eval-plugin.md`) : le prompt de triage a un
+vocabulaire ouvert ("for example: ..."), mais le vrai référentiel
+`Service` que the-client utilise ailleurs n'a que 6 valeurs — dérive déjà
+confirmée dans leurs données de seed (`biologie`/`neurologie` sans
+`Service` correspondant). Summary/compliance restent de la prose libre,
+sans équivalent déterministe.
+
+`TriageEvalPlugin` (même substrat que `MedicalPlugin` : lit un attribut,
+applique une règle, écrit attributs/warnings) pose `eval.triage.tag_known`
+à partir de `oncology.triage.tag`, comparé (normalisé comme the-client le fait
+déjà) à un référentiel configurable (`TRIAGE_KNOWN_SERVICES`, défaut = les
+6 vraies valeurs the-client — pas une liste vide, qui ferait échouer tous les
+tags). Câblé dans `crates/kernel` comme les deux autres plugins
+(`ENABLED_PLUGINS`). 7 + 2 tests unitaires.
+
+**Vérifié en conditions réelles (2026-08-17, même jour).** the-client a câblé
+`oncology.triage.tag` (`AgentOrchestrator.RunAsync`, commit `8a47b80`),
+reconstruit sa stack depuis `dev` (`b422db3`), et testé un vrai appel
+("chute à vélo, genou gonflé" → tag `traumatologie`) — **un vrai défaut
+déjà en base, pas un cas fabriqué pour l'occasion** (`traumatologie` ne
+matche aucun des 6 `Service` connus). Résultat exact : `eval.triage.tag_known
+= "false"` + `plugin.warning` explicite dans `extra_attributes`,
+`spans_with_warnings` incrémenté sur `/metrics/summary`, coexistant
+proprement avec le warning HITL déjà présent sur le même span. Détecté du
+premier coup, sans ajustement après coup.
+
+**Volet 2 (juge sémantique summary/compliance) — tranché, sans code côté
+Venice.** Un juge LLM ne rentre pas dans le contrat de plugin actuel
+(synchrone, sans I/O, borné à 100ms dans `crates/plugin-sink`) — première
+piste envisagée avec l'utilisateur, un binaire séparé (`eval-worker`)
+relisant transcripts/sorties dans ClickHouse, **écartée** : irait à
+l'encontre de la politique PII déjà posée (`docs/interfaces/clickhouse-schema.md`,
+attributs sensibles opt-in/désactivés par défaut) — le cas réel
+`ComplianceAgent` traite nom/date de naissance/NIR/statut VIH en clair,
+faire transiter et stocker ce texte dans Venice (même 90 jours de
+rétention) aurait été un vrai risque de conformité, pas théorique.
+**Décision retenue** : le jugement tourne côté client (the-client ou tout futur
+client), avec son propre texte/sa propre clé API, jamais transmis à
+Venice — seul le verdict structuré (`eval.summary.*`/`eval.compliance.*`,
+typé, jamais de texte libre) est posté en attribut, absorbé par
+`extra_attributes` exactement comme `oncology.*` aujourd'hui. Généralise
+mieux qu'un worker centralisé : zéro couplage Venice à un fournisseur LLM
+ou un format par client. Détail complet dans
+`docs/interfaces/triage-eval-plugin.md`.
+
+## Renommage en Venice (2026-08-17)
+
+Nom définitif choisi avec l'utilisateur avant le chantier cloud : Venice —
+ville connue pour ses canaux, cohérente avec l'architecture réelle du
+kernel (pipeline principal + plugins qui se greffent dessus sans le
+bloquer, comme un réseau de canaux interconnectés plutôt qu'un canal
+unique). Logo retenu après comparaison de deux propositions
+(`UI/assets/logos/logo_venice_v{1,2}.png`) : v1, dont le canal principal
+dessine un V — silhouette plus nette à petite taille (favicon) que le S de
+v2, qui référence pourtant plus fidèlement le tracé du Grand Canal.
+
+Portée du renommage : tous les identifiants fonctionnels (conteneurs/
+réseau/images Docker dans `crates/orchestrator`, container ClickHouse dev)
+et toute la prose (`CLAUDE.md`, `README.md`, `docs/`). Aucun crate n'était
+nommé "trellis" littéralement, pas de renommage de package Cargo
+nécessaire. **Volontairement pas fait** : renommage du repo GitLab
+(casserait le remote `origin` que la session the-client utilise déjà) et du
+répertoire local — reportés avec l'accord explicite de l'utilisateur, notés
+en mémoire pour ne pas être oubliés d'une session à l'autre.
+
+## Interface terminal (`crates/tui`) — fait (2026-08-17)
+
+Avant le chantier cloud : un front demandé par l'utilisateur, tranché en
+TUI plutôt qu'une SPA web (pas de nouveau toolchain JS/Node à construire
+juste avant le déploiement) ou du Rust/WASM (pas de bénéfice d'apprentissage
+"infra" ici, contrairement à `crates/orchestrator` — un choix de framework
+front, pas un concept système). `ratatui` 0.30.2 + `crossterm` 0.29.0,
+versions réelles résolues via `cargo search`/`cargo info`, pas devinées.
+
+Périmètre v1 tranché avec l'utilisateur : miroir strict des 3 endpoints
+`query-api`, rien de nouveau côté API. `crates/tui` réutilise directement
+`query_api::dto` (`SpanDto`/`TraceSummaryDto`/`MetricsSummaryDto`) en leur
+ajoutant `Deserialize` (+`PartialEq` sur `SpanDto` pour les tests) — une
+seule définition du format JSON partagée entre le serveur qui l'émet et le
+client qui le relit, pas une deuxième copie qui pourrait diverger.
+
+Reconstruction de l'arbre de spans faite côté client (`app::span_tree`),
+exactement comme `docs/interfaces/query-api.md` le prescrit déjà pour tout
+consommateur de `GET /traces/{trace_id}` (liste plate, pas un JSON
+imbriqué) — gérée avec garde anti-cycle (spans visités trackés) plutôt que
+de faire confiance à la forme des données, même prudence que le serveur qui
+ne valide pas non plus un arbre à racine unique.
+
+**Intro stylisée ajoutée après premier retour utilisateur** ("très
+minimaliste") : écran de démarrage (passable sur n'importe quelle touche),
+logo calculé par arithmétique ligne/colonne plutôt que tapé à la main en
+ASCII art (garantit la symétrie quelle que soit la hauteur, pas de risque
+de désalignement à l'œil). Couleur teal (`Color::Rgb`) approximant celle du
+vrai logo, appliquée aussi aux bordures/titres de toutes les vues
+(`ui::venice_block`) pour une identité visuelle cohérente, pas seulement
+l'écran d'intro.
+
+**Deuxième retour** ("un peu plus long", "reproduis le logo à l'identique")
+: durée portée à 4s ; `ui::venice_glyph_lines` (juste le V) remplacé par
+`ui::venice_badge_lines`, qui recompose les mêmes éléments que le vrai
+logo — anneau circulaire (équation d'ellipse par ligne, corrigée de
+l'aspect ratio des caractères terminal ~2:1 pour ne pas rendre un ovale),
+4 nœuds aux coins, un lattice de canaux fins avec nœuds circulaires en
+arrière-plan, le V en premier plan avec sa petite queue/nœud au point bas
+— composé en couches sur un `Canvas` (grille de caractères) plutôt qu'un
+seul motif calculé d'un coup. **Précision honnête donnée à l'utilisateur** :
+"à l'identique" au pixel près n'a pas vraiment de sens ici — le lattice du
+PNG source est un tracé organique généré par DALL-E, pas une forme
+paramétrique reproductible exactement en ASCII ; ce qui est livré est une
+interprétation stylisée fidèle à la composition (mêmes éléments, mêmes
+proportions relatives), pas une copie pixel par pixel.
+
+Vérifié à quatre niveaux : 5 tests unitaires (`span_tree`/`humanize_ago`,
+y compris un cas de cycle à 2 nœuds et une référence de parent hors trace)
+sans terminal ; 4 tests d'intégration `--ignored` contre le vrai
+`query-api` déjà en service avec de vraies données the-client (5 traces, 3
+kinds, 7 `spans_with_warnings` — mêmes chiffres que la vérification the-client
+plus tôt dans la session) ; un vrai lancement du binaire dans un
+pseudo-terminal confirmant un cycle démarrage/arrêt propre ; et **le rendu
+visuel réel vérifié pour de vrai** (correction d'une limite annoncée trop
+tôt) — pseudo-terminal avec taille explicite (`TIOCSWINSZ`) + émulation
+d'écran via `pyte` (Python) pour reconstruire ce qui s'affiche réellement,
+pas juste le flux ANSI brut : le glyphe V symétrique et centré, les 3 vues
+avec bordures/tabs qui s'affichent correctement, les vraies traces/coûts/
+warnings the-client visibles à l'écran.
+
+**Troisième retour** ("y'a que ascii art ?") : question posée à
+l'utilisateur plutôt que tranchée seule — vrai choix technique
+(`ratatui-image` 11.0.6, vérifié réel via `cargo info`) entre rester en
+ASCII calculé, passer en half-blocks Unicode (l'image réelle, encodée en
+blocs de couleur, aucune dépendance système), ou les protocoles graphiques
+natifs (Kitty/iTerm2/Sixel, quasi pixel-parfait mais nécessite `chafa`
+— **vérifié absent de cette machine**, `pkg-config --exists chafa` échoue
+— cohérent avec le principe déjà appliqué ailleurs dans ce projet de zéro
+dépendance système à la compilation). Utilisateur a choisi half-blocks.
+
+`crates/tui/src/logo.rs` charge le vrai PNG (`include_bytes!`, pas un
+chemin runtime — le logo doit s'afficher peu importe le répertoire de
+lancement du binaire), encodé via `Picker::halfblocks()` forcé
+explicitement (pas d'auto-détection sixel/kitty/iterm2).
+`default-features = false` sur `ratatui-image` pour exclure `chafa-dyn`.
+
+**Vrai bug trouvé en vérifiant, pas juste en lisant la doc** : le mapping
+pixel-à-cellule natif de l'image (1254×1254px) donne ~126×63 cellules
+terminal — bien plus grand que la plupart des terminaux, ce qui effondrait
+silencieusement la zone de layout du splash à une hauteur nulle (rien ne
+s'affichait, ni l'image ni l'ASCII de repli). Diagnostiqué via un
+`eprintln!` temporaire capturé sur un canal stderr séparé du pty (le
+premier essai de debug, stderr mélangé au pty puis `terminate()` immédiat,
+n'a rien montré — le process n'avait pas eu le temps d'atteindre un point
+de flush). Corrigé en ciblant une taille d'affichage fixe et raisonnable
+(40×20 cellules) plutôt que la résolution native, `Resize::Fit` réduisant
+l'image dans cette cible plutôt que de tenter du 1:1 pixel-parfait.
+
+Repli en cascade si le chargement échoue à n'importe quelle étape
+(décodage, encodage) : `Option<Logo>` — `None` fait retomber sur le badge
+ASCII calculé plutôt que de faire planter tout le TUI pour un logo qui n'a
+pas pu charger.
+
+Vérifié visuellement (même méthode pseudo-terminal + `pyte`) : le vrai
+logo s'affiche, correctement dimensionné et centré, structure reconnaissable
+(anneau, V) une fois le bug de taille corrigé.
+
+**Quatrième retour, un vrai bug cette fois** ("le logo n'apparaît même
+pas") : la taille cible 40×20 était fixe, pas adaptée à la taille réelle
+du terminal — sur un terminal standard **80×24** (la taille par défaut la
+plus courante, pas un cas extrême), 20 lignes d'image + 5 de légende
+dépassaient les 24 lignes disponibles, donc rien ne s'affichait. Vérifié
+en le reproduisant délibérément à 80×24 (pas juste supposé) avant de
+corriger. `logo::target_size` calcule maintenant une taille qui tient
+compte de la vraie taille du terminal (`terminal.size()?`, appelé avant le
+chargement puisqu'un `Protocol` ne se redimensionne pas après coup),
+plafonnée à 40×20 sur un grand terminal, réduite sur un petit. 3 tests
+unitaires (tient dans un 80×24, plafonne sur un très grand terminal, jamais
+de dimension nulle sur un très petit). Revérifié à 80×24 : le logo
+s'affiche correctement.
+
+**Cinquième retour** ("fond plat, effet pixelisé, image trop petite") :
+deux vrais leviers trouvés en lisant le vrai code source du crate
+(`picker.rs`), pas la doc résumée — `chafa` (déjà écarté) ne conditionne
+en réalité pas du tout le support Sixel/Kitty/iTerm2, ces protocoles sont
+compilés inconditionnellement. `Picker::halfblocks()` forcé explicitement
+remplacé par `Picker::from_query_stdio()` : interroge le vrai terminal
+(séquences d'échappement de capacité, lues sur stdin) et choisit le
+meilleur protocole qu'il supporte réellement — rendu quasi pixel-parfait
+sur Kitty/WezTerm/iTerm2/terminaux Sixel, repli sur half-blocks seulement
+si rien ne répond mieux. Doit tourner après `ratatui::init()` mais avant
+la boucle d'événements (contrainte documentée dans le crate lui-même,
+déjà respectée par l'emplacement d'appel dans `main.rs`).
+
+Deuxième levier, indépendant du protocole : la vraie image a une marge
+blanche mesurée (pas devinée, script Python dédié) — le contenu occupe
+les lignes ~97–1136 et colonnes ~109–1143 d'une toile 1254×1254, environ
+17% de bordure blanche de chaque côté. `logo::crop_to_content` recadre
+avant l'encodage, pour que le budget de cellules limité (`target_size`)
+représente du vrai détail plutôt que du blanc — surtout sensible en
+half-blocks. 2 tests unitaires sur une image synthétique (pas l'asset réel,
+pour ne pas dépendre de ses dimensions).
+
+**Limite de vérification honnête, devenue une vraie régression** :
+l'artefact de texte visible vu dans le test synthétique `pyte` n'était pas
+une limite de l'outil de test — l'utilisateur a confirmé en conditions
+réelles (terminal intégré VS Code, l'environnement de dev réel de ce
+projet) : "Venice s'affiche sans image". `Picker::from_query_stdio()`
+choisit un protocole graphique (Sixel/Kitty) selon la réponse de VS Code à
+la requête de capacité, mais VS Code ne rend en réalité pas ce protocole
+— rien ne s'affiche, pire que le repli half-blocks prévu.
+
+**Revenu à `Picker::halfblocks()` forcé** (`logo::picker()`), la seule
+config effectivement vérifiée fonctionner ici. `PICKER_QUERY_TERMINAL=1`
+réactive l'auto-détection pour tester plus tard sur un vrai terminal
+Kitty/WezTerm/iTerm2 hors VS Code, sans la forcer par défaut dans
+l'environnement de dev réel de ce projet. Le recadrage
+(`crop_to_content`) reste actif et profite au half-blocks. Revérifié à
+80×24 après ce retour arrière : l'image s'affiche correctement, sans
+artefact.
+
+**Sixième retour, avec capture d'écran réelle** ("fond blanc, effet
+pixelisé flou") : l'image s'affichait bien (dans un vrai GNOME Terminal,
+hors VS Code cette fois) mais avec un fond blanc plat et une résolution
+visiblement trop basse pour la taille réelle de la fenêtre. Deux causes
+distinctes, chacune vérifiée en lisant le vrai code source de l'encodeur
+half-blocks (`ratatui-image`, `halfblocks/primitive.rs`) avant de corriger :
+
+1. **Le fond blanc n'est pas contournable par la transparence.** L'encodeur
+   sans chafa appelle toujours `img.to_rgb8()` — l'alpha est totalement
+   ignoré, chaque cellule est peinte avec une couleur opaque, quoi qu'il
+   arrive. Impossible de laisser transparaître le fond réel du terminal
+   dans ce mode. `logo::darken_background` recolore les pixels proches du
+   blanc du PNG source en une teinte sombre neutre (`#1e1e1e`, proche du
+   thème sombre par défaut de VS Code et de la plupart des thèmes de
+   terminal) — un contournement assumé, pas une vraie transparence, mais
+   la seule option qui existe avec ce mode de rendu.
+2. **La résolution était plafonnée à 40×20 sans lien avec la vraie taille
+   du terminal de l'utilisateur** (bien plus grand dans son cas réel).
+   Plafond relevé à 64×32 — le half-blocks reste fondamentalement limité
+   par le nombre de cellules (2 "pixels" verticaux par cellule, pas de
+   dithering chafa), donc un budget de cellules plus généreux est le seul
+   levier qui affine réellement le rendu sur un terminal qui a la place.
+
+Vérifié visuellement sur une grande fenêtre simulée (160×55) : nettement
+plus de détail visible, couleurs échantillonnées confirmant un fond
+sombre (aucun blanc pur), pas de régression sur le cas 80×24. 2 nouveaux
+tests unitaires (`caps_at_a_reasonable_maximum_on_a_huge_terminal` mis à
+jour pour les nouveaux plafonds, `darken_background_replaces_background_pixels_only`).
+
+**Septième retour, capture d'écran réelle du fond sombre + résolution
+relevée** : ça marchait techniquement (fond sombre confirmé, plus de
+détail), mais le rendu half-blocks reste des rectangles pleins — "on
+peut essayer une ascii art plus sophistiqué". Pivot complet, pas un
+ajustement de plus : `crates/tui/src/logo.rs` abandonne `ratatui-image`
+entièrement (dépendance retirée de `Cargo.toml`) au profit d'un vrai
+rendu ASCII par densité — rampe de caractères `' .:-=+*#%@'` choisie par
+cellule selon la luminance réelle échantillonnée (pas une simple ligne
+géométrique calculée comme le badge de secours), colorée avec la couleur
+moyenne réelle de la cellule (`image::DynamicImage::resize_exact`,
+filtre `Triangle`, une moyenne par cellule plutôt qu'un point unique).
+
+**Résout aussi le problème de fond pour de vrai, pas par contournement**
+: une cellule "fond" devient un espace littéral — transparence réelle (le
+vrai fond du terminal de l'utilisateur s'affiche, quel qu'il soit),
+contrairement au `darken_background` de l'étape précédente qui devinait
+une teinte sombre unique. `logo::picker()`/`Picker`/`Protocol` supprimés
+avec eux — plus de question de protocole Sixel/Kitty/half-blocks à
+trancher du tout, `PICKER_QUERY_TERMINAL` devient sans objet.
+
+Vérifié : 13 tests unitaires (`cell_glyph` — transparence sur fond exact,
+caractère dense sur contenu sombre — plus tous les tests de recadrage/
+dimensionnement déjà existants, adaptés à la nouvelle API), et un test
+supplémentaire qui charge le vrai asset et vérifie le nombre de lignes
+produit. Vérifié visuellement sur une grande fenêtre simulée (160×55) :
+dégradé de densité net (`.`/`:`/`-`/`=`/`+`/`*`), anneau et V bien
+lisibles, fond réellement vide.
+
+**Intro paginée + onglet "Aide" — fait.** Demande explicite de
+l'utilisateur : un défilement interactif expliquant Venice (histoire, à
+quoi ça se connecte, liens vers la doc), avec l'idée qu'une doc soit
+accessible depuis le TUI, pas seulement au démarrage. `crates/tui/src/content.rs`
+devient la source unique de ce texte (4 pages : pitch, histoire,
+écosystème, pointeurs de doc — chaque affirmation ancrée dans l'historique
+réel du projet, pas inventée) — réutilisée à la fois par l'intro
+(`main.rs::show_intro`) et par un 4ᵉ onglet "Aide" dans l'app
+(`app::View::Help`), pour ne jamais avoir deux copies de ce texte.
+
+`show_splash` renommé `show_intro`, devient une machine à écrans
+(0 = logo, 1..N = pages de contenu) entièrement pilotée au clavier —
+**le timer d'auto-avance de 4s a été retiré** : forcer un délai fixe
+pendant qu'on lit du contenu réel serait allé à l'encontre du mot
+"interactif" explicitement demandé. `→`/Entrée/Espace avance, `←` revient
+en arrière, Échap/`q` passe direct à l'app depuis n'importe quel écran.
+L'onglet "Aide" réutilise le même rendu de page (`ui::draw_content_page`)
+et se navigue avec `←`/`→` une fois sélectionné via `Tab`.
+
+Vérifié bout en bout via pseudo-terminal + `pyte` : les 4 transitions de
+page affichent le bon contenu et le bon compteur (1/4 → 4/4), `Entrée` sur
+la dernière page entre bien dans l'app, `Tab`×3 atteint bien l'onglet
+"Aide" qui affiche le même contenu que l'intro. 3 nouveaux tests unitaires
+sur la pagination (`help_next_page`/`help_prev_page`, bornes incluses).
+
+**Retour utilisateur sur le ton du contenu** ("moins scolaire plus
+produit... écris-le en anglais") : `content.rs` réécrit entièrement — 4
+pages ramenées à 3 (Venice / What it does / Get started), ton produit en
+anglais plutôt qu'un compte-rendu technique en français. Retiré
+explicitement : l'histoire du renommage trellis→Venice et les détails de
+vérification/tests (the-client, fraudos, dates) — ce texte s'adresse à qui
+utilise Venice, pas à qui l'a construit ; l'historique complet reste dans
+ce fichier, pas dans l'app. L'onglet "Aide" renommé "Help" en cohérence
+(la page 3 dit littéralement "look for Help"). `README.md` mis à jour en
+conséquence.
+
+**Reste de l'app passé en anglais aussi** (deux retours successifs :
+d'abord juste l'écran du logo/les indices de navigation d'intro, puis "la
+langue de l'app" en entier) : onglets (`Traces`/`Detail`/`Metrics`/`Help`),
+titres de panneaux, messages d'erreur (`app.status`), indice de pied de
+page. Toute la doc (`README.md`, `CLAUDE.md`, `docs/`) reste en français
+comme le reste du repo — seule l'interface du TUI elle-même (ce que
+l'utilisateur voit à l'écran) est concernée, pas la documentation du
+projet. Vérifié bout en bout via pseudo-terminal + `pyte`, cycle complet
+Traces → Detail → Metrics → Help → page 2, aucun texte français restant
+dans l'app (`grep` sur les caractères accentués dans `crates/tui/src/`,
+zéro résultat).
+
+**Deux pages "référence" ajoutées** ("plus des commandes ou un glossaire,
+un peu comme un man") : `content::pages()` passe de 3 à 5 —
+**Commands** (raccourcis clavier réels, style `man` NAVIGATION/ACTIONS,
+deux colonnes alignées via un nouvel helper `kv()`) et **Glossary**
+(vocabulaire de l'app : `trace`/`span`/`agent_run`/`model_call`/
+`tool_call`/`cost_usd`/`warning`). Contenu des raccourcis vérifié contre
+les vrais bindings de `main.rs::run()`, pas inventé — `q`/`Esc` a un
+comportement contextuel réel (Esc revient à Traces depuis Detail, quitte
+ailleurs) documenté tel quel plutôt que simplifié à tort. Vérifié
+visuellement via pseudo-terminal + `pyte` : les deux pages s'affichent
+correctement alignées, compteur 4/5 et 5/5 corrects.
+
+**Précision de portée** ("le parcours c'est juste à l'intro, uniquement la
+doc style man dans Help") : `content::pages()` scindé en deux fonctions —
+`intro_pages()` (les 5 pages, tour complet au démarrage) et
+`reference_pages()` (seulement Commands + Glossary, 2 pages). L'onglet
+"Help" dans l'app n'utilise plus que `reference_pages()` — le pitch/
+narratif (Venice, What it does, Get started) est une visite ponctuelle au
+premier lancement, pas un contenu à re-consulter en pleine session.
+Chaque page reste construite par une seule fonction (`venice_page()`,
+`commands_page()`, etc.) réutilisée par les deux listes — pas de texte
+dupliqué entre l'intro et l'onglet. Vérifié visuellement : l'onglet Help
+affiche bien 2 pages (Commands 1/2, Glossary 2/2), la navigation reste
+bornée à la dernière page.
+
+## Déploiement cloud — étape 6 pour de vrai (2026-08-20, en cours)
+
+Revue complète du code/tests/étapes avant ce chantier (`/kernel-status`) :
+les 7 étapes du MVP toutes faites avec preuve fichier réelle, 107 tests
+unitaires + 25 tests d'intégration `--ignored` au vert contre un vrai
+ClickHouse/Docker — un vrai bug trouvé au passage (`clippy -D warnings`
+jamais repassé depuis les derniers changements `crates/tui`, `int_plus_one`
+sur un test, corrigé).
+
+**Nom de domaine — décidé, achat en attente.** `example.com` : "shunting
+yard" est à la fois le terme ferroviaire (gare de triage) et le nom de
+l'algorithme de Dijkstra, double sens qui parle à n'importe quel ingénieur.
+Disponibilité vérifiée via RDAP (`rdap.org`, pas de suppositions) parmi une
+dizaine de candidats sur le thème ferroviaire/triage — `.io` choisi plutôt
+que `.dev`. Prix comparés (Porkbun moins cher, ~30$/an, vs OVH ~31-38€
+selon HT/TTC la 1ère année) — achat laissé à l'utilisateur, je n'ai pas
+d'outil de paiement/navigateur pour l'exécuter moi-même.
+
+**VM — CX33 plutôt que CX23.** Le cost-model avait retenu CX23 (2 vCPU/4Go)
+comme repère de coût, jamais comme décision finale de dimensionnement.
+Vérifié contre la doc officielle ClickHouse avant de trancher : ils
+recommandent 32 Go, préviennent d'exceptions mémoire sous 16 Go, et disent
+explicitement que même pour un petit volume, le total ne devrait pas
+descendre sous 8 Go — la CX23 a 4 Go **partagés** entre ClickHouse/kernel/
+query-api/Caddy/OS, sous leur propre plancher. Décidé avec l'utilisateur :
+CX33 (4 vCPU/8 Go, ~8,49€/mois vs ~5,49€/mois) plutôt que tuner ClickHouse
+à la limite dès le premier déploiement public.
+
+**TLS — Caddy, contrat vérifié avant de coder.** `docs/interfaces/caddy-reverse-proxy.md`
+documente la doc officielle Caddy consultée (pas de mémoire) :
+`reverse_proxy h2c://kernel:4317` obligatoire pour le gRPC en clair de
+`tonic` (sans `h2c://`, Caddy parlerait HTTP/1.1 en amont et casserait
+gRPC) ; substitution `{$VARIABLE}` dans le Caddyfile, vérifiée réelle.
+`docker/Caddyfile` + `docker/docker-compose.prod.yml` (image `caddy:2.11.4`,
+jamais `:latest`) — kernel/query-api ne publient plus aucun port, Caddy
+seul expose 80/443. **Les deux vérifiés contre les vrais binaires**, pas
+juste relus : `caddy validate`/`caddy fmt --overwrite` contre le vrai
+`Caddyfile`, `docker compose config` contre le vrai fichier. `scripts/gen-secrets.sh`
+génère de vrais jetons pour remplacer les valeurs `dev-*` avant tout
+déploiement public ; `docker/.env.prod` ajouté à `.gitignore`.
+
+**Segmentation réseau — 3 zones, à la demande explicite de l'utilisateur**
+("intéressant d'isoler le network en fonction de l'appli"), même schéma que
+client-project (`fn-edge`/`fn-app`/`fn-data`) plutôt que le réseau bridge
+implicite unique posé initialement : `venice-edge` (Caddy seul) /
+`venice-app` (Caddy + kernel + query-api) / `venice-data` (kernel +
+query-api + ClickHouse — Caddy n'y est jamais rattaché). **Vérifié en
+conditions réelles, pas juste relu dans le compose** : stack lancée pour de
+vrai (`docker compose ... up`), `docker exec` dans le conteneur `caddy` en
+vie — `wget clickhouse:8123` échoue à la résolution DNS elle-même
+(`bad address`, pas juste une connexion refusée : le nom n'existe tout
+simplement pas pour ce conteneur), `wget kernel:4317` résout et se connecte
+(reset attendu, `wget` en HTTP contre un port gRPC) — la preuve que
+l'isolation est réelle, pas seulement déclarée. Stack de test démontée
+après coup (`down`), pas laissée tourner.
+
+Diagramme du réseau (Artifact, mis à jour avec la segmentation après le
+premier jet en réseau plat) : https://claude.ai/code/artifact/d21b30ce-61e8-408c-8222-9f3f6fd05ebc
 
 ## Repères techniques
 

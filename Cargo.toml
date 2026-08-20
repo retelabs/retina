@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/clickhouse-sink", "crates/fraudos-replay", "crates/kernel","crates/kernel-model", "crates/oncology-replay", "crates/otlp-receiver", "crates/plugin-api", "crates/plugin-example", "crates/plugin-fraudos", "crates/plugin-medical", "crates/plugin-sink", "crates/plugin-wasm-example", "crates/plugin-wasm-host", "crates/plugin-wasm-wire", "crates/query-api"]
+members = ["crates/clickhouse-sink", "crates/cost-model", "crates/fraudos-replay", "crates/kernel","crates/kernel-model", "crates/oncology-replay", "crates/orchestrator", "crates/otlp-receiver", "crates/plugin-api", "crates/plugin-example", "crates/plugin-fraudos", "crates/plugin-medical", "crates/plugin-sink", "crates/plugin-triage-eval", "crates/plugin-wasm-example", "crates/plugin-wasm-host", "crates/plugin-wasm-wire", "crates/pricing", "crates/query-api", "crates/tui"]
 
 [workspace.package]
 edition = "2024"

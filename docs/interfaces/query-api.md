@@ -53,6 +53,12 @@ par `kind` (`model_call`/`tool_call`/`agent_run`). Pas de filtre temporel au
 MVP — sans politique de rétention, un filtre par intervalle serait cosmétique
 plutôt que réellement nécessaire au volume attendu.
 
+**`total_cost_usd` (ajouté le 2026-08-17)** : somme de `cost_usd` par
+`kind`, `null` (pas `0.0`) si aucun span du groupe n'a de coût calculé —
+distinction délibérée entre "aucun span tarifé" et "coût réellement nul".
+Détail complet (table de prix, comptabilité de cache par fournisseur,
+lacunes connues) : `docs/interfaces/cost-calculation.md`.
+
 ## Décisions de binding ClickHouse (suite de l'incertitude laissée à l'étape 3)
 
 `docs/interfaces/clickhouse-schema.md` notait que binder un `[u8; 16]`

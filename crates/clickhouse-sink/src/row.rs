@@ -58,6 +58,12 @@ pub struct SpanRow {
     pub finish_reasons: Vec<String>,
     pub conversation_id: Option<String>,
 
+    /// `None` means "not priced" (unknown provider/model, or a kind with no
+    /// tokens like `tool_call`) — never a wrong number. Computed once at
+    /// ingestion from a static price table (`crates/pricing`), not
+    /// recomputed later if prices change (docs/interfaces/cost-calculation.md).
+    pub cost_usd: Option<f64>,
+
     pub tool_name: Option<String>,
     pub tool_call_id: Option<String>,
     pub tool_type: Option<String>,
@@ -143,6 +149,20 @@ impl TryFrom<ModelCallEvent> for SpanRow {
 
     fn try_from(event: ModelCallEvent) -> Result<Self, Self::Error> {
         let c = common_fields(&event.span)?;
+        // response_model over request_model: it's the model that actually
+        // served the request, so its price is the one that applies
+        // (crates/pricing docs).
+        let cost_usd = pricing::estimate_cost_usd(
+            &event.provider_name,
+            event
+                .response_model
+                .as_deref()
+                .or(event.request_model.as_deref()),
+            event.input_tokens.map(|t| t.get()),
+            event.output_tokens.map(|t| t.get()),
+            event.cache_read_input_tokens.map(|t| t.get()),
+            event.cache_creation_input_tokens.map(|t| t.get()),
+        );
         Ok(SpanRow {
             trace_id: c.trace_id,
             span_id: c.span_id,
@@ -163,6 +183,7 @@ impl TryFrom<ModelCallEvent> for SpanRow {
             cache_creation_input_tokens: event.cache_creation_input_tokens.map(|t| t.get()),
             finish_reasons: event.finish_reasons,
             conversation_id: event.conversation_id,
+            cost_usd,
             tool_name: None,
             tool_call_id: None,
             tool_type: None,
@@ -202,6 +223,7 @@ impl TryFrom<ToolCallEvent> for SpanRow {
             cache_creation_input_tokens: None,
             finish_reasons: Vec::new(),
             conversation_id: None,
+            cost_usd: None,
             tool_name: Some(event.tool_name),
             tool_call_id: event.tool_call_id,
             tool_type: event.tool_type,
@@ -225,6 +247,19 @@ impl TryFrom<AgentRunEvent> for SpanRow {
             AgentInvocationKind::Client => "client",
             AgentInvocationKind::Internal => "internal",
         };
+        // `AgentRunEvent` carries no `response_model` (only client-variant
+        // agents even have a `provider_name` at all) — `request_model` is
+        // the only signal available here.
+        let cost_usd = event.provider_name.as_ref().and_then(|provider| {
+            pricing::estimate_cost_usd(
+                provider,
+                event.request_model.as_deref(),
+                event.input_tokens.map(|t| t.get()),
+                event.output_tokens.map(|t| t.get()),
+                event.cache_read_input_tokens.map(|t| t.get()),
+                event.cache_creation_input_tokens.map(|t| t.get()),
+            )
+        });
         Ok(SpanRow {
             trace_id: c.trace_id,
             span_id: c.span_id,
@@ -245,6 +280,7 @@ impl TryFrom<AgentRunEvent> for SpanRow {
             cache_creation_input_tokens: event.cache_creation_input_tokens.map(|t| t.get()),
             finish_reasons: Vec::new(),
             conversation_id: event.conversation_id,
+            cost_usd,
             tool_name: None,
             tool_call_id: None,
             tool_type: None,
@@ -321,6 +357,83 @@ mod tests {
         // fields that don't apply to this event kind stay empty
         assert!(row.tool_name.is_none());
         assert!(row.agent_name.is_none());
+        // "claude" isn't a real model id in crates/pricing's table — unpriced,
+        // not a wrong number.
+        assert!(row.cost_usd.is_none());
+    }
+
+    #[test]
+    fn model_call_event_with_a_priced_model_gets_a_cost() {
+        let event = ModelCallEvent {
+            span: sample_span(),
+            provider_name: ProviderName::OpenAi,
+            operation_name: OperationName::Chat,
+            request_model: Some("gpt-4o-mini".to_string()),
+            response_model: Some("gpt-4o-mini".to_string()),
+            input_tokens: Some(TokenCount::try_from(1_000_000).unwrap()),
+            output_tokens: Some(TokenCount::try_from(1_000_000).unwrap()),
+            cache_read_input_tokens: None,
+            cache_creation_input_tokens: None,
+            finish_reasons: vec![],
+            conversation_id: None,
+            extra_attributes: vec![],
+        };
+
+        let row = SpanRow::try_from(event).unwrap();
+        // gpt-4o-mini: $0.15 input + $0.60 output per million tokens.
+        assert!((row.cost_usd.unwrap() - 0.75).abs() < 1e-9);
+    }
+
+    #[test]
+    fn agent_run_event_without_a_provider_is_unpriced() {
+        let event = AgentRunEvent {
+            span: sample_span(),
+            invocation_kind: AgentInvocationKind::Internal,
+            operation_name: OperationName::InvokeAgent,
+            agent_name: Some("triage-agent".to_string()),
+            agent_id: None,
+            agent_description: None,
+            agent_version: None,
+            request_model: Some("claude-sonnet-5".to_string()),
+            provider_name: None,
+            input_tokens: Some(TokenCount::try_from(100).unwrap()),
+            output_tokens: Some(TokenCount::try_from(50).unwrap()),
+            cache_read_input_tokens: None,
+            cache_creation_input_tokens: None,
+            conversation_id: None,
+            extra_attributes: vec![],
+        };
+
+        let row = SpanRow::try_from(event).unwrap();
+        // Internal invocations aren't required to carry a provider_name
+        // (docs/interfaces/semconv-genai.md) — without one, there's nothing
+        // to price against.
+        assert!(row.cost_usd.is_none());
+    }
+
+    #[test]
+    fn agent_run_event_with_a_provider_and_priced_model_gets_a_cost() {
+        let event = AgentRunEvent {
+            span: sample_span(),
+            invocation_kind: AgentInvocationKind::Client,
+            operation_name: OperationName::InvokeAgent,
+            agent_name: Some("triage-agent".to_string()),
+            agent_id: None,
+            agent_description: None,
+            agent_version: None,
+            request_model: Some("claude-sonnet-5".to_string()),
+            provider_name: Some(ProviderName::Anthropic),
+            input_tokens: Some(TokenCount::try_from(1_000_000).unwrap()),
+            output_tokens: Some(TokenCount::try_from(1_000_000).unwrap()),
+            cache_read_input_tokens: None,
+            cache_creation_input_tokens: None,
+            conversation_id: None,
+            extra_attributes: vec![],
+        };
+
+        let row = SpanRow::try_from(event).unwrap();
+        // claude-sonnet-5: $2 input + $10 output per million tokens.
+        assert!((row.cost_usd.unwrap() - 12.00).abs() < 1e-9);
     }
 
     #[test]
@@ -340,6 +453,7 @@ mod tests {
         assert_eq!(row.tool_name.as_deref(), Some("Flights"));
         assert_eq!(row.agent_name.as_deref(), Some("triage-agent"));
         assert!(row.provider_name.is_none());
+        assert!(row.cost_usd.is_none());
     }
 
     #[test]

@@ -4,13 +4,18 @@
 //! are hex strings here, matching the OTLP/JSON convention already used
 //! upstream (docs/interfaces/otlp-ingestion.md) rather than inventing a new
 //! encoding.
+//!
+//! `Deserialize` added 2026-08-17 alongside `Serialize`: `crates/tui`
+//! depends on this crate as a library and parses these exact types back out
+//! of the HTTP responses it receives — one shared definition of the wire
+//! shape instead of a second copy that could drift from this one.
 
 use std::collections::HashMap;
 
 use clickhouse_sink::SpanRow;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SpanDto {
     pub trace_id: String,
     pub span_id: String,
@@ -31,6 +36,7 @@ pub struct SpanDto {
     pub cache_creation_input_tokens: Option<u64>,
     pub finish_reasons: Vec<String>,
     pub conversation_id: Option<String>,
+    pub cost_usd: Option<f64>,
     pub tool_name: Option<String>,
     pub tool_call_id: Option<String>,
     pub tool_type: Option<String>,
@@ -75,6 +81,7 @@ impl From<SpanRow> for SpanDto {
             cache_creation_input_tokens: row.cache_creation_input_tokens,
             finish_reasons: row.finish_reasons,
             conversation_id: row.conversation_id,
+            cost_usd: row.cost_usd,
             tool_name: row.tool_name,
             tool_call_id: row.tool_call_id,
             tool_type: row.tool_type,
@@ -92,7 +99,7 @@ impl From<SpanRow> for SpanDto {
 /// One row of `GET /traces` — a trace summarized from its spans, not a
 /// first-class stored entity (there is no `traces` table, see
 /// docs/interfaces/query-api.md).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TraceSummaryDto {
     pub trace_id: String,
     pub span_count: u64,
@@ -100,15 +107,23 @@ pub struct TraceSummaryDto {
     pub end_time_unix_nano: u64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KindMetricsDto {
     pub kind: String,
     pub span_count: u64,
     pub total_input_tokens: u64,
     pub total_output_tokens: u64,
+    /// `None` — deliberately *not* collapsed to `0.0` like the token totals
+    /// above. Verified against a real ClickHouse (2026-08-17):
+    /// `sum(Nullable(Float64))` returns `NULL` for an empty group *and* a
+    /// group where every `cost_usd` is `NULL` — those are different
+    /// situations ("no spans of this kind" / "no priced model in this
+    /// kind's spans") that collapsing to `0.0` would make indistinguishable
+    /// from "genuinely $0 spent", misleading anyone reading the summary.
+    pub total_cost_usd: Option<f64>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetricsSummaryDto {
     pub by_kind: Vec<KindMetricsDto>,
     /// Spans carrying at least one `plugin.warning` entry in

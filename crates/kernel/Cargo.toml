@@ -11,5 +11,6 @@ plugin-api = { version = "0.1.0", path = "../plugin-api" }
 plugin-fraudos = { version = "0.1.0", path = "../plugin-fraudos" }
 plugin-medical = { version = "0.1.0", path = "../plugin-medical" }
 plugin-sink = { version = "0.1.0", path = "../plugin-sink" }
+plugin-triage-eval = { version = "0.1.0", path = "../plugin-triage-eval" }
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros"] }
 tonic = "0.14.6"

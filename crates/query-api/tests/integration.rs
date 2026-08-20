@@ -109,6 +109,54 @@ async fn seed(client: &Client, trace_id: TraceId) {
         .expect("seed insert should succeed");
 }
 
+/// One priced `model_call` span, isolated from `seed()` above — mixing it
+/// in there would break `get_trace_returns_both_spans_ordered_by_start_time`'s
+/// `spans.len() == 2` assertion.
+async fn seed_priced_model_call(client: &Client, trace_id: TraceId) {
+    let model_call = ConvertedEvent::ModelCall(ModelCallEvent {
+        span: SpanContext {
+            trace_id,
+            span_id: SpanId::try_from(&[3u8; 8][..]).unwrap(),
+            parent_span_id: None,
+            start_time_unix_nano: 1_000,
+            end_time_unix_nano: 2_000,
+            status: SpanStatus::default(),
+            error_type: None,
+        },
+        provider_name: ProviderName::OpenAi,
+        operation_name: OperationName::Chat,
+        request_model: Some("gpt-4o-mini".to_string()),
+        response_model: Some("gpt-4o-mini".to_string()),
+        input_tokens: Some(TokenCount::try_from(1_000_000).unwrap()),
+        output_tokens: Some(TokenCount::try_from(1_000_000).unwrap()),
+        cache_read_input_tokens: None,
+        cache_creation_input_tokens: None,
+        finish_reasons: vec![],
+        conversation_id: None,
+        extra_attributes: vec![],
+    });
+
+    let sink = ClickHouseSink::new(client.clone(), "spans");
+    sink.accept_batch(vec![model_call])
+        .await
+        .expect("seed insert should succeed");
+}
+
+async fn setup_priced(id_byte: u8) -> (Router, String) {
+    let client = test_client();
+    clickhouse_sink::run_migrations(&client).await.expect(
+        "failed to apply migrations — is ClickHouse running? (scripts/dev-clickhouse.sh up)",
+    );
+
+    let trace_id = TraceId::try_from(&[id_byte; 16][..]).unwrap();
+    seed_priced_model_call(&client, trace_id).await;
+
+    (
+        build_app(client, TEST_API_KEY.to_string()),
+        hex::encode(trace_id.as_bytes()),
+    )
+}
+
 /// `id_byte` gives each test its own `trace_id` (`[id_byte; 16]`) — tests run
 /// concurrently by default and share the one real ClickHouse table, so
 /// reusing a fixed trace_id across tests causes cross-test row collisions
@@ -218,6 +266,50 @@ async fn metrics_summary_counts_by_kind() {
         .find(|k| k["kind"] == "model_call")
         .expect("expected a model_call row");
     assert!(model_call["total_input_tokens"].as_u64().unwrap() >= 10);
+}
+
+#[tokio::test]
+#[ignore = "requires `scripts/dev-clickhouse.sh up`"]
+async fn get_trace_includes_a_computed_cost_for_a_priced_model_call() {
+    let (app, trace_id_hex) = setup_priced(7).await;
+
+    let response = app
+        .oneshot(authed_request(format!("/traces/{trace_id_hex}")))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_json(response).await;
+    let spans = body.as_array().unwrap();
+    assert_eq!(spans.len(), 1);
+    // gpt-4o-mini: $0.15 input + $0.60 output per million tokens — proof the
+    // real pipeline (event -> SpanRow -> ClickHouse -> SpanDto -> JSON)
+    // carries cost_usd end to end, not just crates/pricing in isolation.
+    let cost = spans[0]["cost_usd"].as_f64().unwrap();
+    assert!((cost - 0.75).abs() < 1e-9);
+}
+
+#[tokio::test]
+#[ignore = "requires `scripts/dev-clickhouse.sh up`"]
+async fn metrics_summary_includes_a_non_null_total_cost_once_a_priced_span_exists() {
+    let (app, _) = setup_priced(8).await;
+
+    let response = app
+        .oneshot(authed_request("/metrics/summary"))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = body_json(response).await;
+    let by_kind = body["by_kind"].as_array().unwrap();
+    let model_call = by_kind
+        .iter()
+        .find(|k| k["kind"] == "model_call")
+        .expect("expected a model_call row");
+    // >=, not ==: this endpoint aggregates the whole table, and other tests
+    // in this file seed model_call rows concurrently (same reasoning as
+    // metrics_summary_counts_by_kind above).
+    assert!(model_call["total_cost_usd"].as_f64().unwrap() >= 0.75 - 1e-9);
 }
 
 #[tokio::test]

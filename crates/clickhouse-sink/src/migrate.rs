@@ -28,6 +28,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "spans_retention_ttl",
         sql: include_str!("../migrations/0002_spans_retention_ttl.sql"),
     },
+    Migration {
+        version: 3,
+        name: "add_cost_usd",
+        sql: include_str!("../migrations/0003_add_cost_usd.sql"),
+    },
 ];
 
 /// Applies every migration newer than what's already recorded, in order.

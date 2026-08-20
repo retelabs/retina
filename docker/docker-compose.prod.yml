@@ -1,0 +1,116 @@
+# Squelette de déploiement VPS (dossier étape 6, volet TLS) — variante prod
+# de docker-compose.stack.yml : mêmes 3 services, plus Caddy en frontal TLS.
+# kernel/query-api ne publient plus de port sur l'hôte — Caddy est la seule
+# porte d'entrée publique (ports 80/443). Secrets réels via un fichier .env
+# non commité (voir docker/.env.prod.example), même posture que
+# CLICKHOUSE_PASSWORD/POSTGRES_PASSWORD ailleurs dans ce repo/the-client.
+#
+# Segmentation réseau — 3 zones, même schéma que client-project
+# (fn-edge/fn-app/fn-data) plutôt qu'un unique réseau bridge implicite :
+#
+#   venice-edge │ Caddy seul — seule zone atteignable depuis l'extérieur
+#   venice-app  │ Caddy ↔ kernel/query-api — logique applicative
+#   venice-data │ kernel/query-api ↔ ClickHouse — zone critique, 0 accès
+#               │ depuis venice-edge (Caddy n'y est pas rattaché du tout)
+#
+#   Internet → Caddy (edge) → kernel/query-api (app) → ClickHouse (data)
+#                    ✗ ────────────────────────────────────────────────
+#
+# Démarrage : cp docker/.env.prod.example docker/.env.prod, éditez les
+# valeurs (scripts/gen-secrets.sh pour les jetons), pointez le DNS de
+# ${API_HOST}/${OTLP_HOST} vers l'IP du VPS, puis :
+#   docker compose -f docker/docker-compose.prod.yml --env-file docker/.env.prod up -d --build
+
+networks:
+  venice-edge:
+    driver: bridge
+  venice-app:
+    driver: bridge
+    internal: true    # aucun accès internet direct depuis kernel/query-api
+  venice-data:
+    driver: bridge
+    internal: true    # zone critique — ClickHouse injoignable depuis venice-edge
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    environment:
+      CLICKHOUSE_DB: observability
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - clickhouse-prod-data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    networks:
+      - venice-data    # fn-edge/fn-app n'ont pas accès à ce réseau
+    restart: unless-stopped
+
+  kernel:
+    build:
+      context: ..
+      dockerfile: docker/kernel.Dockerfile
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    environment:
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DATABASE: observability
+      KERNEL_API_KEY: ${KERNEL_API_KEY}
+      ENABLED_PLUGINS: ${ENABLED_PLUGINS:-}
+    # Pas de port publié sur l'hôte — seul Caddy (ci-dessous) est joignable
+    # depuis l'extérieur.
+    networks:
+      - venice-app     # reçoit le trafic de Caddy
+      - venice-data    # atteint ClickHouse
+    restart: unless-stopped
+
+  query-api:
+    build:
+      context: ..
+      dockerfile: docker/query-api.Dockerfile
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    environment:
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DATABASE: observability
+      QUERY_API_KEY: ${QUERY_API_KEY}
+    networks:
+      - venice-app     # reçoit le trafic de Caddy
+      - venice-data    # atteint ClickHouse
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.11.4
+    depends_on:
+      - kernel
+      - query-api
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL}
+      OTLP_HOST: ${OTLP_HOST}
+      API_HOST: ${API_HOST}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - venice-edge    # seule zone avec une route internet
+      - venice-app     # pour atteindre kernel/query-api par nom
+    restart: unless-stopped
+
+volumes:
+  clickhouse-prod-data:
+  caddy-data:
+  caddy-config:

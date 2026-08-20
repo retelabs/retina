@@ -5,10 +5,31 @@
 # non commité (voir docker/.env.prod.example), même posture que
 # CLICKHOUSE_PASSWORD/POSTGRES_PASSWORD ailleurs dans ce repo/the-client.
 #
+# Segmentation réseau — 3 zones, même schéma que client-project
+# (fn-edge/fn-app/fn-data) plutôt qu'un unique réseau bridge implicite :
+#
+#   venice-edge │ Caddy seul — seule zone atteignable depuis l'extérieur
+#   venice-app  │ Caddy ↔ kernel/query-api — logique applicative
+#   venice-data │ kernel/query-api ↔ ClickHouse — zone critique, 0 accès
+#               │ depuis venice-edge (Caddy n'y est pas rattaché du tout)
+#
+#   Internet → Caddy (edge) → kernel/query-api (app) → ClickHouse (data)
+#                    ✗ ────────────────────────────────────────────────
+#
 # Démarrage : cp docker/.env.prod.example docker/.env.prod, éditez les
 # valeurs (scripts/gen-secrets.sh pour les jetons), pointez le DNS de
 # ${API_HOST}/${OTLP_HOST} vers l'IP du VPS, puis :
 #   docker compose -f docker/docker-compose.prod.yml --env-file docker/.env.prod up -d --build
+
+networks:
+  venice-edge:
+    driver: bridge
+  venice-app:
+    driver: bridge
+    internal: true    # aucun accès internet direct depuis kernel/query-api
+  venice-data:
+    driver: bridge
+    internal: true    # zone critique — ClickHouse injoignable depuis venice-edge
 
 services:
   clickhouse:
@@ -25,6 +46,8 @@ services:
       interval: 2s
       timeout: 2s
       retries: 30
+    networks:
+      - venice-data    # fn-edge/fn-app n'ont pas accès à ce réseau
     restart: unless-stopped
 
   kernel:
@@ -42,8 +65,10 @@ services:
       KERNEL_API_KEY: ${KERNEL_API_KEY}
       ENABLED_PLUGINS: ${ENABLED_PLUGINS:-}
     # Pas de port publié sur l'hôte — seul Caddy (ci-dessous) est joignable
-    # depuis l'extérieur, même raisonnement que la segmentation réseau de
-    # client-project (fn-edge/fn-app/fn-data).
+    # depuis l'extérieur.
+    networks:
+      - venice-app     # reçoit le trafic de Caddy
+      - venice-data    # atteint ClickHouse
     restart: unless-stopped
 
   query-api:
@@ -59,6 +84,9 @@ services:
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
       CLICKHOUSE_DATABASE: observability
       QUERY_API_KEY: ${QUERY_API_KEY}
+    networks:
+      - venice-app     # reçoit le trafic de Caddy
+      - venice-data    # atteint ClickHouse
     restart: unless-stopped
 
   caddy:
@@ -77,6 +105,9 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+    networks:
+      - venice-edge    # seule zone avec une route internet
+      - venice-app     # pour atteindre kernel/query-api par nom
     restart: unless-stopped
 
 volumes:

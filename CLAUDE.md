@@ -1003,6 +1003,65 @@ dupliqué entre l'intro et l'onglet. Vérifié visuellement : l'onglet Help
 affiche bien 2 pages (Commands 1/2, Glossary 2/2), la navigation reste
 bornée à la dernière page.
 
+## Déploiement cloud — étape 6 pour de vrai (2026-08-20, en cours)
+
+Revue complète du code/tests/étapes avant ce chantier (`/kernel-status`) :
+les 7 étapes du MVP toutes faites avec preuve fichier réelle, 107 tests
+unitaires + 25 tests d'intégration `--ignored` au vert contre un vrai
+ClickHouse/Docker — un vrai bug trouvé au passage (`clippy -D warnings`
+jamais repassé depuis les derniers changements `crates/tui`, `int_plus_one`
+sur un test, corrigé).
+
+**Nom de domaine — décidé, achat en attente.** `example.com` : "shunting
+yard" est à la fois le terme ferroviaire (gare de triage) et le nom de
+l'algorithme de Dijkstra, double sens qui parle à n'importe quel ingénieur.
+Disponibilité vérifiée via RDAP (`rdap.org`, pas de suppositions) parmi une
+dizaine de candidats sur le thème ferroviaire/triage — `.io` choisi plutôt
+que `.dev`. Prix comparés (Porkbun moins cher, ~30$/an, vs OVH ~31-38€
+selon HT/TTC la 1ère année) — achat laissé à l'utilisateur, je n'ai pas
+d'outil de paiement/navigateur pour l'exécuter moi-même.
+
+**VM — CX33 plutôt que CX23.** Le cost-model avait retenu CX23 (2 vCPU/4Go)
+comme repère de coût, jamais comme décision finale de dimensionnement.
+Vérifié contre la doc officielle ClickHouse avant de trancher : ils
+recommandent 32 Go, préviennent d'exceptions mémoire sous 16 Go, et disent
+explicitement que même pour un petit volume, le total ne devrait pas
+descendre sous 8 Go — la CX23 a 4 Go **partagés** entre ClickHouse/kernel/
+query-api/Caddy/OS, sous leur propre plancher. Décidé avec l'utilisateur :
+CX33 (4 vCPU/8 Go, ~8,49€/mois vs ~5,49€/mois) plutôt que tuner ClickHouse
+à la limite dès le premier déploiement public.
+
+**TLS — Caddy, contrat vérifié avant de coder.** `docs/interfaces/caddy-reverse-proxy.md`
+documente la doc officielle Caddy consultée (pas de mémoire) :
+`reverse_proxy h2c://kernel:4317` obligatoire pour le gRPC en clair de
+`tonic` (sans `h2c://`, Caddy parlerait HTTP/1.1 en amont et casserait
+gRPC) ; substitution `{$VARIABLE}` dans le Caddyfile, vérifiée réelle.
+`docker/Caddyfile` + `docker/docker-compose.prod.yml` (image `caddy:2.11.4`,
+jamais `:latest`) — kernel/query-api ne publient plus aucun port, Caddy
+seul expose 80/443. **Les deux vérifiés contre les vrais binaires**, pas
+juste relus : `caddy validate`/`caddy fmt --overwrite` contre le vrai
+`Caddyfile`, `docker compose config` contre le vrai fichier. `scripts/gen-secrets.sh`
+génère de vrais jetons pour remplacer les valeurs `dev-*` avant tout
+déploiement public ; `docker/.env.prod` ajouté à `.gitignore`.
+
+**Segmentation réseau — 3 zones, à la demande explicite de l'utilisateur**
+("intéressant d'isoler le network en fonction de l'appli"), même schéma que
+client-project (`fn-edge`/`fn-app`/`fn-data`) plutôt que le réseau bridge
+implicite unique posé initialement : `venice-edge` (Caddy seul) /
+`venice-app` (Caddy + kernel + query-api) / `venice-data` (kernel +
+query-api + ClickHouse — Caddy n'y est jamais rattaché). **Vérifié en
+conditions réelles, pas juste relu dans le compose** : stack lancée pour de
+vrai (`docker compose ... up`), `docker exec` dans le conteneur `caddy` en
+vie — `wget clickhouse:8123` échoue à la résolution DNS elle-même
+(`bad address`, pas juste une connexion refusée : le nom n'existe tout
+simplement pas pour ce conteneur), `wget kernel:4317` résout et se connecte
+(reset attendu, `wget` en HTTP contre un port gRPC) — la preuve que
+l'isolation est réelle, pas seulement déclarée. Stack de test démontée
+après coup (`down`), pas laissée tourner.
+
+Diagramme du réseau (Artifact, mis à jour avec la segmentation après le
+premier jet en réseau plat) : https://claude.ai/code/artifact/d21b30ce-61e8-408c-8222-9f3f6fd05ebc
+
 ## Repères techniques
 
 - Ingestion OTLP : `tonic` + `prost`.

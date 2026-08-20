@@ -84,11 +84,13 @@ client query-api).
 - Autorisation fine (quel client peut lire quelles traces) — non pertinent
   tant qu'il n'y a qu'un seul tenant.
 - Chiffrement du canal (TLS) — hors périmètre de ce contrat, orthogonal à
-  l'authentification et pas encore tranché (dossier section 5, déploiement).
-  Sans TLS, le jeton circule en clair sur le réseau — acceptable seulement
-  parce que le squelette de déploiement actuel (dossier étape 6) est
-  mono-VM/mono-région, pas un vrai trafic inter-service sur un réseau non
-  maîtrisé.
+  l'authentification. Sans TLS, le jeton circule en clair sur le réseau —
+  acceptable pour `docker-compose.stack.yml` (dev local/démo, mono-VM,
+  trafic inter-conteneurs sur le réseau Docker interne). **Résolu pour le
+  déploiement public** (2026-08-20) : `docker/docker-compose.prod.yml` +
+  `docker/Caddyfile` terminent TLS (Let's Encrypt automatique) devant
+  `kernel`/`query-api`, qui ne publient plus de port sur l'hôte — voir
+  `docs/interfaces/caddy-reverse-proxy.md`.
 
 ## Vérifié comment
 

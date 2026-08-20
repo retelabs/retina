@@ -1,0 +1,18 @@
+# Reverse proxy TLS devant kernel (gRPC/OTLP) et query-api (HTTP) —
+# contrat vérifié dans docs/interfaces/caddy-reverse-proxy.md avant d'écrire
+# ce fichier. HTTPS automatique (Let's Encrypt) se déclenche par la simple
+# présence d'un nom de domaine comme adresse de bloc — rien d'autre à faire.
+{
+	email {$ACME_EMAIL}
+}
+
+{$OTLP_HOST} {
+	# tonic sert du gRPC en clair (TLS terminé ici, pas côté kernel) —
+	# h2c:// est obligatoire, sans quoi Caddy parlerait HTTP/1.1 en amont
+	# et casserait gRPC (qui exige HTTP/2).
+	reverse_proxy h2c://kernel:4317
+}
+
+{$API_HOST} {
+	reverse_proxy query-api:8080
+}

@@ -208,7 +208,7 @@ mod tests {
     fn fits_within_a_common_80x24_terminal_leaving_room_for_the_caption() {
         let size = target_size(Size::new(80, 24));
         assert!(
-            size.height + CAPTION_ROWS + 1 <= 24,
+            size.height + CAPTION_ROWS < 24,
             "{size:?} doesn't leave room for the caption"
         );
     }

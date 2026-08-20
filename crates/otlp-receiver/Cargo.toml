@@ -6,7 +6,7 @@ edition.workspace = true
 [dependencies]
 kernel-model = { version = "0.1.0", path = "../kernel-model" }
 prost = "0.14.4"
-tonic = "0.14.6"
+tonic = { version = "0.14.6", features = ["tls-ring", "tls-webpki-roots"] }
 tonic-prost = "0.14.6"
 
 [build-dependencies]

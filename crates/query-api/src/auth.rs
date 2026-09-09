@@ -17,14 +17,22 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
-/// The expected `Authorization` header value, pre-formatted as
-/// `Bearer <token>` once at startup rather than on every request.
+/// The set of expected `Authorization` header values, pre-formatted as
+/// `Bearer <token>` once at startup rather than on every request — one per
+/// known client (see `crates/query-api/src/main.rs`: `QUERY_API_KEY` plus
+/// optional `QUERY_API_KEYS_EXTRA`), same reasoning as
+/// `crates/otlp-receiver/src/auth.rs`'s `ApiKeyInterceptor`.
 #[derive(Clone)]
-pub struct ExpectedBearer(String);
+pub struct ExpectedBearer(Vec<String>);
 
 impl ExpectedBearer {
-    pub fn new(token: impl Into<String>) -> Self {
-        Self(format!("Bearer {}", token.into()))
+    pub fn new(tokens: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        Self(
+            tokens
+                .into_iter()
+                .map(|t| format!("Bearer {}", t.into()))
+                .collect(),
+        )
     }
 }
 
@@ -38,8 +46,19 @@ pub async fn require_api_key(
         .get(header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok());
 
-    match provided {
-        Some(v) if constant_time_eq(v.as_bytes(), expected.0.as_bytes()) => Ok(next.run(req).await),
-        _ => Err(StatusCode::UNAUTHORIZED),
+    // Same "no early return across tokens" reasoning as
+    // crates/otlp-receiver/src/auth.rs — checks every expected token
+    // unconditionally rather than short-circuiting on the first match.
+    let matched = match provided {
+        Some(v) => expected.0.iter().fold(false, |acc, exp| {
+            acc | constant_time_eq(v.as_bytes(), exp.as_bytes())
+        }),
+        None => false,
+    };
+
+    if matched {
+        Ok(next.run(req).await)
+    } else {
+        Err(StatusCode::UNAUTHORIZED)
     }
 }

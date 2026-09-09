@@ -152,7 +152,7 @@ async fn setup_priced(id_byte: u8) -> (Router, String) {
     seed_priced_model_call(&client, trace_id).await;
 
     (
-        build_app(client, TEST_API_KEY.to_string()),
+        build_app(client, vec![TEST_API_KEY.to_string()]),
         hex::encode(trace_id.as_bytes()),
     )
 }
@@ -173,7 +173,7 @@ async fn setup(id_byte: u8) -> (Router, String) {
     seed(&client, trace_id).await;
 
     (
-        build_app(client, TEST_API_KEY.to_string()),
+        build_app(client, vec![TEST_API_KEY.to_string()]),
         hex::encode(trace_id.as_bytes()),
     )
 }
@@ -331,4 +331,50 @@ async fn requests_without_a_valid_bearer_token_are_rejected() {
         .unwrap();
     let response = app.oneshot(wrong_token).await.unwrap();
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+#[ignore = "requires `scripts/dev-clickhouse.sh up`"]
+async fn a_second_client_with_its_own_token_can_also_authenticate() {
+    // Proves build_app really accepts more than one valid token — the real
+    // motivation for this (a second real client, e.g. second-client, getting its
+    // own revocable credential instead of sharing the-client's/fraudos-replay's).
+    let client = test_client();
+    clickhouse_sink::run_migrations(&client).await.expect(
+        "failed to apply migrations — is ClickHouse running? (scripts/dev-clickhouse.sh up)",
+    );
+    let app = build_app(
+        client,
+        vec![TEST_API_KEY.to_string(), "second-client-key".to_string()],
+    );
+
+    let first_client = Request::builder()
+        .uri("/metrics/summary")
+        .header(header::AUTHORIZATION, format!("Bearer {TEST_API_KEY}"))
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(
+        app.clone().oneshot(first_client).await.unwrap().status(),
+        StatusCode::OK
+    );
+
+    let second_client = Request::builder()
+        .uri("/metrics/summary")
+        .header(header::AUTHORIZATION, "Bearer second-client-key")
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(
+        app.clone().oneshot(second_client).await.unwrap().status(),
+        StatusCode::OK
+    );
+
+    let neither = Request::builder()
+        .uri("/metrics/summary")
+        .header(header::AUTHORIZATION, "Bearer some-other-key")
+        .body(Body::empty())
+        .unwrap();
+    assert_eq!(
+        app.oneshot(neither).await.unwrap().status(),
+        StatusCode::UNAUTHORIZED
+    );
 }

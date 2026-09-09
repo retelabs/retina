@@ -76,11 +76,34 @@ client query-api).
 - **Rejet** : `tonic::Status::unauthenticated(...)` côté gRPC,
   `StatusCode::UNAUTHORIZED` (401) côté HTTP.
 
+## Plusieurs jetons valides simultanément — fait (2026-09-09)
+
+Deuxième client réel (second-client, en plus de the-client/`fraudos-replay`) — même
+raisonnement que `ENABLED_PLUGINS`/`TRIAGE_KNOWN_SERVICES` ailleurs dans ce
+kernel : généraliser quand un deuxième cas réel arrive, pas avant.
+`KERNEL_API_KEY`/`QUERY_API_KEY` restent les jetons **requis** (échec fermé
+inchangé) ; `KERNEL_API_KEYS_EXTRA`/`QUERY_API_KEYS_EXTRA` (optionnels,
+séparés par des virgules) ajoutent des jetons valides supplémentaires — un
+par client, révocable indépendamment sans casser les autres. Toujours pas
+d'autorisation fine (voir ci-dessous) : n'importe quel jeton de la liste
+donne le même accès complet à la surface, juste une identité de credential
+distincte, pas un scope différent.
+
+`ApiKeyInterceptor`/`ExpectedBearer` comparent maintenant contre un
+`Vec<String>` plutôt qu'un `String` unique — chaque jeton attendu comparé en
+temps constant, **sans court-circuiter sur le premier qui matche** (le
+`fold` parcourt toute la liste même après un succès), pour ne pas fuiter en
+plus quel jeton de la liste a matché.
+
+`crates/orchestrator` volontairement pas étendu — outil interne
+(`127.0.0.1` par défaut), aucun deuxième client externe à qui donner un
+jeton distinct pour l'instant.
+
 ## Ce que ça ne couvre pas
 
-- Rotation de jeton, plusieurs jetons valides simultanément (déploiement sans
-  interruption d'un nouveau jeton) — pas nécessaire pour un jeton statique de
-  MVP mono-instance.
+- Rotation de jeton (déploiement sans interruption d'un nouveau jeton qui
+  remplace un ancien) — toujours pas nécessaire, `KERNEL_API_KEYS_EXTRA`/
+  `QUERY_API_KEYS_EXTRA` couvrent l'ajout, pas le remplacement à chaud.
 - Autorisation fine (quel client peut lire quelles traces) — non pertinent
   tant qu'il n'y a qu'un seul tenant.
 - Chiffrement du canal (TLS) — hors périmètre de ce contrat, orthogonal à
@@ -112,3 +135,14 @@ cycle `/deploy`→`/status`→`/teardown` complet, un vrai rejeu gRPC
 (`fraudos-replay`) et une vraie requête `query-api` confirmant que la pile
 déployée derrière l'auth fonctionne réellement, pas seulement
 `status: "Healthy"`.
+
+**Jetons multiples (2026-09-09)** : nouveaux tests unitaires
+`crates/otlp-receiver/src/auth.rs` (accepte n'importe quel jeton d'un
+ensemble, rejette un jeton hors ensemble) et
+`crates/kernel/src/main.rs`/`crates/query-api/src/main.rs`
+(`parse_extra_tokens` — non défini, chaîne vide, virgules avec espaces).
+Nouveau test d'intégration `query-api`
+(`a_second_client_with_its_own_token_can_also_authenticate`, contre un vrai
+ClickHouse) : deux jetons distincts passés à `build_app`, les deux acceptés
+indépendamment, un troisième jeton toujours rejeté. `cargo test --workspace`
+et `cargo clippy --workspace -- -D warnings` au vert après le changement.

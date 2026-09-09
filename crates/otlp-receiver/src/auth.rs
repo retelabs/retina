@@ -17,19 +17,26 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
-/// Checks every incoming request's `authorization` metadata against a
-/// single expected `Bearer <token>` value. Fails closed: constructing this
-/// requires a token (see `crates/kernel/src/main.rs`), there is no
-/// "disabled" state.
+/// Checks every incoming request's `authorization` metadata against a set of
+/// expected `Bearer <token>` values — one per known client (see
+/// `crates/kernel/src/main.rs`: `KERNEL_API_KEY` plus optional
+/// `KERNEL_API_KEYS_EXTRA`), so a second real client (a second real vertical
+/// showing up, same reasoning `ENABLED_PLUGINS` already applies elsewhere in
+/// this kernel) doesn't have to share a credential with the first one to be
+/// revocable independently. Fails closed: constructing this requires at
+/// least the primary token, there is no "disabled" state.
 #[derive(Clone)]
 pub struct ApiKeyInterceptor {
-    expected: String,
+    expected: Vec<String>,
 }
 
 impl ApiKeyInterceptor {
-    pub fn new(token: impl Into<String>) -> Self {
+    pub fn new(tokens: impl IntoIterator<Item = impl Into<String>>) -> Self {
         Self {
-            expected: format!("Bearer {}", token.into()),
+            expected: tokens
+                .into_iter()
+                .map(|t| format!("Bearer {}", t.into()))
+                .collect(),
         }
     }
 }
@@ -41,11 +48,24 @@ impl Interceptor for ApiKeyInterceptor {
             .get("authorization")
             .and_then(|v| v.to_str().ok());
 
-        match provided {
-            Some(v) if constant_time_eq(v.as_bytes(), self.expected.as_bytes()) => Ok(request),
-            _ => Err(Status::unauthenticated(
+        // Checks against every expected token unconditionally (no early
+        // return on the first match) — otherwise which token index matched
+        // would itself leak a little timing information, on top of the
+        // per-token constant-time comparison already guarding against a
+        // leak of *which token* it is.
+        let matched = match provided {
+            Some(v) => self.expected.iter().fold(false, |acc, exp| {
+                acc | constant_time_eq(v.as_bytes(), exp.as_bytes())
+            }),
+            None => false,
+        };
+
+        if matched {
+            Ok(request)
+        } else {
+            Err(Status::unauthenticated(
                 "missing or invalid authorization header",
-            )),
+            ))
         }
     }
 }
@@ -75,14 +95,14 @@ mod tests {
 
     #[test]
     fn accepts_matching_bearer_token() {
-        let mut interceptor = ApiKeyInterceptor::new("secret");
+        let mut interceptor = ApiKeyInterceptor::new(["secret"]);
         let request = request_with_auth(Some("Bearer secret"));
         assert!(interceptor.call(request).is_ok());
     }
 
     #[test]
     fn rejects_missing_header() {
-        let mut interceptor = ApiKeyInterceptor::new("secret");
+        let mut interceptor = ApiKeyInterceptor::new(["secret"]);
         let request = request_with_auth(None);
         let err = interceptor.call(request).unwrap_err();
         assert_eq!(err.code(), tonic::Code::Unauthenticated);
@@ -90,15 +110,37 @@ mod tests {
 
     #[test]
     fn rejects_wrong_token() {
-        let mut interceptor = ApiKeyInterceptor::new("secret");
+        let mut interceptor = ApiKeyInterceptor::new(["secret"]);
         let request = request_with_auth(Some("Bearer wrong"));
         assert!(interceptor.call(request).is_err());
     }
 
     #[test]
     fn rejects_token_without_bearer_prefix() {
-        let mut interceptor = ApiKeyInterceptor::new("secret");
+        let mut interceptor = ApiKeyInterceptor::new(["secret"]);
         let request = request_with_auth(Some("secret"));
+        assert!(interceptor.call(request).is_err());
+    }
+
+    #[test]
+    fn accepts_any_token_from_a_multi_token_set() {
+        let mut interceptor = ApiKeyInterceptor::new(["primary", "secondary"]);
+        assert!(
+            interceptor
+                .call(request_with_auth(Some("Bearer primary")))
+                .is_ok()
+        );
+        assert!(
+            interceptor
+                .call(request_with_auth(Some("Bearer secondary")))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn rejects_a_token_not_in_the_multi_token_set() {
+        let mut interceptor = ApiKeyInterceptor::new(["primary", "secondary"]);
+        let request = request_with_auth(Some("Bearer neither"));
         assert!(interceptor.call(request).is_err());
     }
 }

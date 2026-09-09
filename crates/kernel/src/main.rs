@@ -33,6 +33,24 @@ fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
 }
 
+/// `KERNEL_API_KEYS_EXTRA`: comma-separated additional valid tokens, on top
+/// of the required `KERNEL_API_KEY` — a second real client (second-client,
+/// alongside the-client/fraudos-replay) gets its own revocable credential instead
+/// of sharing the first one's. `None`/unset means "no extra tokens", same
+/// shape as `select_enabled`/`triage_known_services` above: a pure function,
+/// testable without touching the environment.
+fn parse_extra_tokens(raw: Option<&str>) -> Vec<String> {
+    raw.map(|config| {
+        config
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect()
+    })
+    .unwrap_or_default()
+}
+
 /// Filters `available` (name, plugin) pairs down to the ones named in
 /// `requested` (a comma-separated `ENABLED_PLUGINS` value). `None` (the env
 /// var unset) means "run everything" — preserves the behavior before this
@@ -115,6 +133,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // unauthenticated.
     let api_key = std::env::var("KERNEL_API_KEY")
         .expect("KERNEL_API_KEY must be set — see docs/interfaces/kernel-auth.md");
+    let mut api_keys = vec![api_key];
+    api_keys.extend(parse_extra_tokens(
+        std::env::var("KERNEL_API_KEYS_EXTRA").ok().as_deref(),
+    ));
     // Resolved before touching ClickHouse: a typo in ENABLED_PLUGINS is a
     // config error, same class as a missing KERNEL_API_KEY — fail before
     // any network I/O, not partway through startup.
@@ -136,7 +158,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let receiver = Receiver::new(sink);
 
     eprintln!("kernel (otlp-receiver + clickhouse-sink) listening on {bind_addr}");
-    let interceptor = ApiKeyInterceptor::new(api_key);
+    let interceptor = ApiKeyInterceptor::new(api_keys);
     Server::builder()
         .add_service(TraceServiceServer::with_interceptor(receiver, interceptor))
         .serve(bind_addr)
@@ -199,5 +221,21 @@ mod tests {
     #[should_panic(expected = "unknown plugin `not-a-real-plugin`")]
     fn panics_on_unknown_plugin_name() {
         select_enabled(sample(), Some("not-a-real-plugin"));
+    }
+
+    #[test]
+    fn parse_extra_tokens_unset_is_empty() {
+        assert!(parse_extra_tokens(None).is_empty());
+    }
+
+    #[test]
+    fn parse_extra_tokens_explicit_empty_string_is_empty() {
+        assert!(parse_extra_tokens(Some("")).is_empty());
+    }
+
+    #[test]
+    fn parse_extra_tokens_splits_trims_and_drops_blanks() {
+        let result = parse_extra_tokens(Some(" tok-a ,tok-b, ,tok-c "));
+        assert_eq!(result, vec!["tok-a", "tok-b", "tok-c"]);
     }
 }

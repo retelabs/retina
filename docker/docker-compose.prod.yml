@@ -63,6 +63,7 @@ services:
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
       CLICKHOUSE_DATABASE: observability
       KERNEL_API_KEY: ${KERNEL_API_KEY}
+      KERNEL_API_KEYS_EXTRA: ${KERNEL_API_KEYS_EXTRA:-}
       ENABLED_PLUGINS: ${ENABLED_PLUGINS:-}
     # Pas de port publié sur l'hôte — seul Caddy (ci-dessous) est joignable
     # depuis l'extérieur.
@@ -84,6 +85,7 @@ services:
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
       CLICKHOUSE_DATABASE: observability
       QUERY_API_KEY: ${QUERY_API_KEY}
+      QUERY_API_KEYS_EXTRA: ${QUERY_API_KEYS_EXTRA:-}
     networks:
       - venice-app     # reçoit le trafic de Caddy
       - venice-data    # atteint ClickHouse

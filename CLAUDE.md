@@ -1080,6 +1080,11 @@ premier jet en réseau plat) : https://claude.ai/code/artifact/d21b30ce-61e8-408
 - `scripts/check-pins.sh` — rapporte l'état des pins vendorés.
 - `scripts/dev-clickhouse.sh up|down` — instance ClickHouse locale pour le
   développement (`docker/docker-compose.clickhouse.yml`).
+- `scripts/test-integration.sh [--with-docker]` — tous les tests `#[ignore]`
+  depuis zéro : ClickHouse jetable (version épinglée), plugin WASM, vrai
+  kernel + rejeu fraudos, vrai query-api ; `--with-docker` ajoute
+  l'orchestrator. C'est la vérification à passer avant de changer la
+  version de ClickHouse (épinglée partout, jamais `:latest`).
 
 ## Slash commands disponibles
 

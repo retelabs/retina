@@ -56,6 +56,17 @@ clippy:
   script:
     - cargo clippy --workspace --all-targets -- -D warnings
 
+# Avis RustSec (h2, rustls, wasmtime corrigés le 2026-09-30) : échoue sur
+# toute vulnérabilité connue ; `paste` (non maintenu, tiré par clickhouse)
+# reste un simple avertissement. Pas encore vérifié sur un vrai runner.
+audit:
+  stage: check
+  image: rust:1.97.1-slim-bookworm
+  <<: *on_main_auto_else_manual
+  script:
+    - cargo install cargo-audit --locked
+    - cargo audit
+
 # Couvre à la fois les tests par défaut (cargo test --workspace) et les
 # tests d'intégration marqués #[ignore] qui ont besoin d'un vrai ClickHouse
 # (crates/clickhouse-sink, crates/query-api — chacun applique sa propre
@@ -76,12 +87,16 @@ test:
     CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
     CLICKHOUSE_URL: http://clickhouse:8123
     CLICKHOUSE_DATABASE: observability
+  # `cargo test --workspace -- --ignored` tout court ne pouvait pas passer
+  # ici : tui veut un query-api qui tourne, cost-model des données rejouées,
+  # orchestrator un démon Docker. Le script lance kernel/query-api/rejeu
+  # lui-même ; l'orchestrator reste hors CI (pas de démon dans ce job).
   before_script:
     - rustup target add wasm32-unknown-unknown
+    - apt-get update -qq && apt-get install -y -qq curl python3 >/dev/null
   script:
-    - ./scripts/build-wasm-plugins.sh
     - cargo test --workspace
-    - cargo test --workspace -- --ignored
+    - IT_CLICKHOUSE_URL=http://clickhouse:8123 ./scripts/test-integration.sh
 
 .docker-build-push: &docker-build-push
   stage: build-images

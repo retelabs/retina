@@ -1,6 +1,6 @@
 //! Static per-model price table. Versioned in this repo rather than fetched
-//! at runtime (docs/interfaces/cost-calculation.md: "où vit la table de
-//! prix ?" — statique, pas fournie par le client) — a price change means a
+//! at runtime (docs/interfaces/cost-calculation.md: "where does the price
+//! table live?": static, not supplied by the client) — a price change means a
 //! commit here, not a runtime config change, so historical `cost_usd`
 //! values already written stay correct for the price that was actually in
 //! effect when the span was ingested (`crates/pricing` is only ever called

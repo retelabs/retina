@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Squelette de déploiement complet en local (étape 6) : ClickHouse + kernel +
-# query-api, avec les mêmes images Docker que la cible de déploiement.
-# Usage : scripts/dev-stack.sh up|down|logs
+# The complete deployment skeleton, locally (step 6): ClickHouse + kernel +
+# query-api, with the same Docker images as the deployment target.
+# Usage: scripts/dev-stack.sh up|down|logs
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Épingle vendor/semconv-genai sur un commit/tag exact de
-# open-telemetry/semantic-conventions-genai. Ne jamais suivre main en continu
-# (design-dossier.md, section 2.1) : ces conventions sont en
-# statut Development et changent sous nos pieds sinon.
+# Pins vendor/semconv-genai to an exact commit or tag of
+# open-telemetry/semantic-conventions-genai. Never track main continuously
+# (design-dossier.md, section 2.1): these conventions are in Development
+# status and would change under our feet otherwise.
 #
-# Usage : scripts/pin-semconv.sh <tag-ou-commit>
+# Usage: scripts/pin-semconv.sh <tag-or-commit>
 set -euo pipefail
 
-REF="${1:?usage: scripts/pin-semconv.sh <tag-ou-commit>}"
+REF="${1:?usage: scripts/pin-semconv.sh <tag-or-commit>}"
 REPO_URL="https://github.com/open-telemetry/semantic-conventions-genai.git"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEST="$ROOT_DIR/vendor/semconv-genai"
@@ -22,17 +22,17 @@ RESOLVED_SHA="$(git -C "$DEST" rev-parse FETCH_HEAD)"
 rm -rf "$DEST/.git"
 
 cat > "$DEST/PINNED_REF.md" <<EOF
-Source : $REPO_URL
-Ref demandée : $REF
-Commit résolu : $RESOLVED_SHA
-Épinglé le : $(date -u +%Y-%m-%dT%H:%M:%SZ)
+Source: $REPO_URL
+Requested ref: $REF
+Resolved commit: $RESOLVED_SHA
+Pinned on: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-Ne pas éditer ce répertoire à la main. Pour changer le pin :
-scripts/pin-semconv.sh <nouvelle-ref>
+Do not edit this directory by hand. To change the pin:
+scripts/pin-semconv.sh <new-ref>
 
-Toute modification de ce pin doit s'accompagner d'une relecture de la couche
-de mapping OTLP -> modèle interne (dossier section 2.1) et d'une mise à jour
-de docs/interfaces/semconv-genai.md.
+Any change to this pin must come with a review of the OTLP -> internal
+model mapping layer (design dossier section 2.1) and an update of
+docs/interfaces/semconv-genai.md.
 EOF
 
-echo "vendor/semconv-genai épinglé sur $RESOLVED_SHA (ref demandée: $REF)"
+echo "vendor/semconv-genai pinned to $RESOLVED_SHA (requested ref: $REF)"

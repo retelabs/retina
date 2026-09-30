@@ -2,7 +2,7 @@
 //! (migrations/0001_create_spans.sql, docs/interfaces/clickhouse-schema.md).
 //! One struct for all 3 MVP event kinds, discriminated by `kind`, so a
 //! trace's spans can be fetched in one query regardless of type (needed by
-//! step 4: "récupérer l'arbre d'une trace").
+//! step 4: "fetch a trace's tree").
 
 use std::collections::HashMap;
 use std::fmt;

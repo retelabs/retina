@@ -6,7 +6,7 @@ use clickhouse::Client;
 use crate::auth::{ExpectedBearer, require_api_key};
 use crate::routes::{get_trace, list_traces, metrics_summary};
 
-/// The 2-3 endpoints dossier étape 4 asks for — see
+/// The 2-3 endpoints dossier step 4 asks for — see
 /// docs/interfaces/query-api.md for the contract each one exposes.
 ///
 /// Route syntax note: axum 0.8 requires `{param}`, not the pre-0.8 `:param`

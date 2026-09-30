@@ -1,29 +1,28 @@
-//! Le calcul lui-même — fonctions pures, aucune dépendance à Docker ou
-//! ClickHouse, pour rester testables sans rien de réel en marche. Les
-//! entrées mesurées/vérifiées (`measure.rs`, `pricing.rs`) sont passées en
-//! paramètres, pas relues ici.
+//! The computation itself: pure functions, no dependency on Docker or
+//! ClickHouse, so they stay testable with nothing real running. The measured
+//! and verified inputs (`measure.rs`, `pricing.rs`) are passed in as
+//! parameters, not read again here.
 
 use crate::pricing::{ObjectStoragePricing, VmPricing};
 
-const BYTES_PER_GB: f64 = 1_000_000_000.0; // Go décimal — l'unité que les fournisseurs cotent.
+const BYTES_PER_GB: f64 = 1_000_000_000.0; // Decimal GB, the unit providers quote.
 
 pub struct CostReport {
     pub spans_per_day: u64,
     pub retention_days: u32,
-    /// Volume stocké à l'état stationnaire (la fenêtre de rétention est
-    /// pleine) — pas "aujourd'hui", ce que la table pèsera une fois que
-    /// le TTL a atteint son régime permanent.
+    /// Volume stored at steady state (the retention window is full): not
+    /// "today", but what the table will weigh once the TTL has reached its
+    /// permanent regime.
     pub stored_spans: u64,
     pub stored_gb: f64,
-    /// Combien de jours à ce volume avant de dépasser le disque inclus de
-    /// la VM, en supposant une croissance linéaire depuis un disque vide —
-    /// `None` à volume nul (la croissance ne se produit jamais).
+    /// How many days at this volume before the VM's included disk is full,
+    /// assuming linear growth from an empty disk. `None` at zero volume (the
+    /// growth never happens).
     pub days_until_disk_full: Option<f64>,
-    /// Si `stored_gb` (l'état stationnaire) dépasse le disque inclus —
-    /// distinct de `days_until_disk_full` : la rétention peut plafonner la
-    /// croissance avant que le disque ne se remplisse, ou au contraire le
-    /// disque peut se remplir avant que la rétention n'ait jamais l'effet
-    /// de plafonner quoi que ce soit.
+    /// Whether `stored_gb` (the steady state) exceeds the included disk.
+    /// Distinct from `days_until_disk_full`: retention may cap the growth
+    /// before the disk fills up, or the disk may fill up before retention
+    /// ever caps anything.
     pub steady_state_exceeds_disk: bool,
     pub vm_monthly_eur: f64,
     pub object_storage_monthly_usd: f64,
@@ -59,9 +58,9 @@ pub fn compute(
         steady_state_exceeds_disk: stored_gb * BYTES_PER_GB > disk_bytes,
         vm_monthly_eur: vm.monthly_eur,
         object_storage_monthly_usd: billable_storage_gb * storage.per_gb_month_usd,
-        // Ces deux-là sont des constantes vérifiées (docs/cost-model.md),
-        // pas des fonctions du volume — Cloudflare (CDN) et GitLab
-        // (registre) sont déjà à 0€ à tout volume réaliste pour ce projet.
+        // These two are verified constants (docs/cost-model.md), not
+        // functions of the volume: Cloudflare (CDN) and GHCR (registry) are
+        // already at €0 at any realistic volume for this project.
         cdn_monthly_eur: crate::pricing::CDN_MONTHLY_EUR,
         registry_monthly_eur: crate::pricing::CONTAINER_REGISTRY_MONTHLY_EUR,
     }
@@ -95,7 +94,7 @@ mod tests {
         assert_eq!(report.object_storage_monthly_usd, 0.0);
         assert_eq!(report.days_until_disk_full, None);
         // The VM itself is not zero — it's the one cost that's identical
-        // between "100% perso" and "hybride", not something the hybrid
+        // between "all self-built" and "hybrid", not something the hybrid
         // extras add.
         assert_eq!(report.vm_monthly_eur, 5.49);
     }

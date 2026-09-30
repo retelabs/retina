@@ -17,7 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed={proto_root}");
 
     // Client codegen was skipped until now (this crate only ever ran the
-    // server side) — turned on for dossier étape 7, which needs a real gRPC
+    // server side) — turned on for dossier step 7, which needs a real gRPC
     // client to replay converted telemetry against a running kernel rather
     // than only calling `convert_span`/`Receiver` in-process.
     tonic_prost_build::configure().compile_protos(

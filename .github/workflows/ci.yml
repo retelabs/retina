@@ -1,9 +1,9 @@
-# Remplace .gitlab-ci.yml depuis la migration vers github.com/retelabs/retina
-# (2026-09-30). Mêmes étapes : fmt/clippy/audit, tests unitaires, tous les
-# tests d'intégration via scripts/test-integration.sh (ClickHouse en service,
-# orchestrator compris : le runner a un démon Docker), images Docker.
-# Dépôt privé : minutes Actions comptées — déclenché sur main, sur les PR et
-# à la main, pas à chaque push sur dev (même logique de quota qu'avant).
+# Replaces .gitlab-ci.yml since the move to github.com/retelabs/retina
+# (2026-09-30). The same steps: fmt/clippy/audit, unit tests, every
+# integration test through scripts/test-integration.sh (ClickHouse as a
+# service, the orchestrator included: the runner has a Docker daemon), Docker
+# images. Private repository, so Actions minutes count: runs on main, on pull
+# requests and by hand, not on every push to dev.
 name: ci
 on:
   push:
@@ -25,15 +25,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      # Échoue sur toute vulnérabilité connue ; `paste` (non maintenu, tiré
-      # par clickhouse) reste un avertissement.
+      # Fails on any known vulnerability; `paste` (unmaintained, pulled in by
+      # clickhouse) stays a warning.
       - run: cargo install cargo-audit --locked && cargo audit
 
   test:
     runs-on: ubuntu-24.04
     services:
       clickhouse:
-        # Même version que docker/docker-compose.*.yml (git grep clickhouse-server:).
+        # The same version as docker/docker-compose.*.yml (git grep clickhouse-server:).
         image: clickhouse/clickhouse-server:26.8.15.10
         env:
           CLICKHOUSE_DB: observability
@@ -68,9 +68,9 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      # Construit à chaque passage (le Dockerfile reste vérifié) ; ne pousse
-      # vers GHCR que sur un tag v* ou à la main, pour ne pas accumuler une
-      # image par commit dans le stockage des paquets privés.
+      # Built on every run (the Dockerfile stays checked); pushed to GHCR only
+      # on a v* tag or by hand, so as not to pile up one image per commit in
+      # the private package storage.
       - uses: docker/build-push-action@v6
         with:
           context: .

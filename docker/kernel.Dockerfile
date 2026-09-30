@@ -1,11 +1,10 @@
-# Étape 6 (dossier section 2.2) — squelette de déploiement : construit
-# l'image du binaire `kernel` (otlp-receiver + clickhouse-sink câblés,
-# crates/kernel). Un seul cloud/une seule région pas encore choisis
-# (dossier section 5) — cette image est le même artefact quel que soit le
-# cloud, seul le provisionnement de la VM qui la fait tourner en dépendra.
+# Dossier step 6 (section 2.2), the deployment skeleton: builds the image of
+# the `kernel` binary (otlp-receiver + clickhouse-sink wired together,
+# crates/kernel). The image is the same artefact whatever the cloud; only the
+# provisioning of the VM running it depends on that choice (ADR 0002).
 #
-# Build depuis la racine du repo (le contexte doit inclure vendor/, lu par
-# crates/otlp-receiver/build.rs via un chemin relatif) :
+# Build from the repository root (the context must include vendor/, read by
+# crates/otlp-receiver/build.rs through a relative path):
 #   docker build -f docker/kernel.Dockerfile -t retina-kernel .
 
 FROM rust:1.97.1-slim-bookworm AS builder
@@ -19,9 +18,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app/target/release/kernel /usr/local/bin/kernel
 
-# Mêmes défauts que crates/kernel/src/main.rs (env_or) — la vraie
-# configuration en déploiement viendra des variables d'environnement du
-# provisionnement, pas d'un changement de cette image.
+# The same defaults as crates/kernel/src/main.rs (env_or): the real
+# deployment configuration comes from the provisioning's environment
+# variables, not from a change to this image.
 ENV KERNEL_BIND=0.0.0.0:4317
 EXPOSE 4317
 ENTRYPOINT ["/usr/local/bin/kernel"]

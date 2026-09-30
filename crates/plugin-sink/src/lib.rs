@@ -1,6 +1,6 @@
 //! `PluginSink<S>` — the pipeline insertion point for plugins, resolving the
-//! "où insérer l'appel plugin dans le pipeline" question left open since
-//! étape 5 (docs/interfaces/plugin-contract-v0.md). See
+//! "where to insert the plugin call in the pipeline" question left open since
+//! step 5 (docs/interfaces/plugin-contract-v0.md). See
 //! docs/interfaces/oncology-governance.md for why this shape (a `SpanSink`
 //! decorator) was chosen over wiring plugins directly into `otlp-receiver`.
 //!
@@ -9,7 +9,7 @@
 //! `extra_attributes` — the same generic bag every other provider/domain
 //! extension already lives in, no new storage column needed. Warnings become
 //! `("plugin.warning", "[<plugin name>] <text>")` entries; duplicate keys are
-//! fine (`extra_attributes` was designed as a `Vec`, not a `Map`, from étape 1
+//! fine (`extra_attributes` was designed as a `Vec`, not a `Map`, from step 1
 //! specifically to tolerate this).
 //!
 //! **Isolation from the ingestion critical path** (2026-08-15): each plugin

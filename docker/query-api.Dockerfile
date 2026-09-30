@@ -1,5 +1,5 @@
-# Étape 6 — image du binaire `query-api` (crates/query-api). Voir
-# docker/kernel.Dockerfile pour le contexte général.
+# Step 6: the image of the `query-api` binary (crates/query-api). See
+# docker/kernel.Dockerfile for the general context.
 #
 #   docker build -f docker/query-api.Dockerfile -t retina-query-api .
 

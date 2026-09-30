@@ -1,5 +1,5 @@
-//! OTLP/traces receiver (dossier section 2.2, étape 2). Accepts, validates
-//! and hands off spans — persistence (étape 3) is behind the [`SpanSink`]
+//! OTLP/traces receiver (dossier section 2.2, step 2). Accepts, validates
+//! and hands off spans — persistence (step 3) is behind the [`SpanSink`]
 //! seam, not decided here. Contracts this crate implements are documented in
 //! docs/interfaces/otlp-ingestion.md and docs/interfaces/semconv-genai.md.
 

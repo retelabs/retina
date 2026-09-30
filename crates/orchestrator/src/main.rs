@@ -1,21 +1,20 @@
-//! Control plane "maison" (dossier section 5 — décision cloud ouverte, mise
-//! de côté au profit d'un objectif d'apprentissage : coder un service
-//! managé en Rust, comprendre les concepts, avant de choisir un hébergeur).
+//! A home-made control plane (design dossier section 5: the cloud decision was
+//! left open and set aside for a learning goal, coding a managed service in
+//! Rust to understand the concepts before choosing a host; see ADR 0002).
 //! Exposes `POST /deploy`, `GET /status`, `POST /teardown` over ClickHouse +
 //! `kernel` + `query-api` (`crates/orchestrator/src/topology.rs`), replacing
 //! `scripts/dev-stack.sh` with a real service rather than a script.
 //!
-//! `kernel`/`query-api` sont construits par ce control plane lui-même
-//! (`POST /build`, `src/image_build.rs` pour le contexte tar) — plus de
-//! `docker build` externe requis. Seul ClickHouse reste tiré d'un registre
+//! `kernel`/`query-api` are built by this control plane itself
+//! (`POST /build`, `src/image_build.rs` for the tar context): no external
+//! `docker build` is needed. Only ClickHouse is still pulled from a registry
 //! (`docs/interfaces/docker-engine-api.md`).
 //!
-//! Authentifié comme `crates/kernel`/`crates/query-api`
-//! (docs/interfaces/kernel-auth.md, `src/api.rs`) : `ORCHESTRATOR_API_KEY`,
-//! échec fermé au démarrage. `ORCHESTRATOR_BIND` reste par défaut sur
-//! `127.0.0.1` plutôt que `0.0.0.0` (contrairement à `crates/kernel`/
-//! `crates/query-api`) — l'authentification s'ajoute à cette prudence, ne
-//! la remplace pas.
+//! Authenticated like `crates/kernel`/`crates/query-api`
+//! (docs/interfaces/kernel-auth.md, `src/api.rs`): `ORCHESTRATOR_API_KEY`,
+//! fail-closed at startup. `ORCHESTRATOR_BIND` defaults to `127.0.0.1`
+//! rather than `0.0.0.0` (unlike `crates/kernel`/`crates/query-api`):
+//! authentication adds to that caution, it does not replace it.
 
 use std::sync::Arc;
 

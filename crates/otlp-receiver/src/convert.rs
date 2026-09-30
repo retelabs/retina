@@ -78,8 +78,8 @@ fn convert_attributes(attrs: Vec<ProtoKeyValue>) -> Vec<Attribute> {
 }
 
 /// Looks up `key`, returning the *last* matching entry — the duplicate-key
-/// policy decided in docs/interfaces/otlp-ingestion.md ("comportement
-/// imprévisible" left to the receiver by OTLP itself).
+/// policy decided in docs/interfaces/otlp-ingestion.md (the
+/// "unpredictable behaviour" left to the receiver by OTLP itself).
 fn find_last<'a>(attrs: &'a [Attribute], key: &str) -> Option<&'a AttributeValue> {
     attrs.iter().rev().find(|(k, _)| k == key).map(|(_, v)| v)
 }

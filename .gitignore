@@ -2,10 +2,10 @@
 /target/
 **/target/
 
-# Outils/caches locaux non liés au projet
+# Local tools and caches unrelated to the project
 /.fastembed_cache/
 
-# Éditeurs / OS
+# Editors / OS
 .DS_Store
 *.swp
 

@@ -45,7 +45,7 @@ pub struct ListTracesParams {
     limit: Option<u64>,
 }
 
-/// `GET /traces?limit=N` — "lister les traces récentes" (dossier étape 4).
+/// `GET /traces?limit=N` — "list recent traces" (dossier step 4).
 pub async fn list_traces(
     State(client): State<Client>,
     Query(params): Query<ListTracesParams>,
@@ -59,7 +59,7 @@ pub async fn list_traces(
     Ok(Json(traces))
 }
 
-/// `GET /traces/{trace_id}` — "récupérer l'arbre d'une trace" (dossier étape
+/// `GET /traces/{trace_id}` — "fetch a trace's tree" (dossier step
 /// 4), `trace_id` as the same lower-hex 32-char encoding OTLP/JSON uses.
 pub async fn get_trace(
     State(client): State<Client>,
@@ -76,8 +76,8 @@ pub async fn get_trace(
     Ok(Json(rows.into_iter().map(SpanDto::from).collect()))
 }
 
-/// `GET /metrics/summary` — "agréger quelques métriques de base" (dossier
-/// étape 4).
+/// `GET /metrics/summary` — "aggregate a few basic metrics" (dossier
+/// step 4).
 pub async fn metrics_summary(
     State(client): State<Client>,
 ) -> Result<Json<MetricsSummaryDto>, ApiError> {

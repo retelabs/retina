@@ -1,10 +1,10 @@
--- Coût $ par span (docs/interfaces/cost-calculation.md) — calculé une seule
--- fois à l'ingestion (crates/pricing, appelé depuis src/row.rs), jamais
--- recalculé après coup : un changement de tarif ne doit pas réécrire le
--- coût déjà stocké pour des spans plus anciens.
+-- $ cost per span (docs/interfaces/cost-calculation.md), computed once at
+-- ingestion (crates/pricing, called from src/row.rs) and never recomputed
+-- afterwards: a price change must not rewrite the cost already stored for
+-- older spans.
 --
--- Nullable, comme les autres champs dérivés de gen_ai.usage.* : NULL veut
--- dire "non tarifé" (modèle/fournisseur absent de la table de prix, ou type
--- d'événement sans tokens comme tool_call), jamais un coût erroné.
+-- Nullable, like the other fields derived from gen_ai.usage.*: NULL means
+-- "not priced" (model or provider missing from the price table, or an event
+-- type without tokens such as tool_call), never a wrong cost.
 ALTER TABLE spans
     ADD COLUMN cost_usd Nullable(Float64);

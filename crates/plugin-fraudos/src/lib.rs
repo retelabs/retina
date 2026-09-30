@@ -1,6 +1,6 @@
 //! `FraudosPlugin` — the first plugin genuinely informed by a real vertical
-//! (dossier section 2.4: "laisser [le contrat] être informé par le premier
-//! vertical réel"), unlike `plugin-example`/`plugin-wasm-example` which are
+//! (dossier section 2.4: "let the first real vertical inform
+//! [the contract]"), unlike `plugin-example`/`plugin-wasm-example` which are
 //! deliberately generic. Grounded in what `docs/interfaces/fraudos-agentspan.md`
 //! found in the real fraudos-prototype repo: agent runs carry `fraudos.*`
 //! extra_attributes (attached by `crates/fraudos-replay`, not first-class
@@ -20,7 +20,7 @@ use plugin_api::{KernelEvent, Plugin, PluginOutcome};
 
 /// Decisions serious enough that losing the ability to correlate them with
 /// a real-world outcome later (dossier section 3: "l'issue arrive souvent
-/// après l'inférence") would matter for an audit.
+/// after inference") would matter for an audit.
 const CONSEQUENTIAL_DECISIONS: &[&str] = &[
     "CONFIRMED_FRAUD",
     "REQUEST_BLOCK",

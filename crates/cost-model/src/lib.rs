@@ -1,6 +1,6 @@
-//! Modèle de coût réel pour retina — voir `docs/cost-model.md` pour les
-//! sources de prix et `src/main.rs` pour le contexte (deuxième chantier
-//! "apprentissage cloud", après `crates/orchestrator`).
+//! A real cost model for Retina: see `docs/cost-model.md` for the price
+//! sources and `src/main.rs` for the context (the second "cloud learning"
+//! piece of work, after `crates/orchestrator`).
 
 pub mod measure;
 pub mod pricing;

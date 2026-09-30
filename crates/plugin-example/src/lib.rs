@@ -1,4 +1,4 @@
-//! `ExamplePlugin` — the "plugin factice" dossier étape 5 asks for, to
+//! `ExamplePlugin` — the "dummy plugin" dossier step 5 asks for, to
 //! validate the plugin-api contract before a real vertical exists. It is
 //! deliberately generic/toy, not a stand-in for the fintech plugin (dossier
 //! section 3): it computes a derived `example.total_tokens` attribute for

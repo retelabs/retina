@@ -24,10 +24,10 @@ fn now_unix_nano() -> u64 {
         .unwrap_or(0)
 }
 
-/// A `width × height` character canvas — lets the badge be composed in
-/// layers (ring, then interior canal lines, then the bold `V` on top, so
-/// later layers paint over earlier ones exactly like the real logo's
-/// z-order) instead of computing one flat pattern in a single pass.
+/// A `width × height` character canvas: lets the badge be composed in
+/// layers (orbit, then the spectrum bars, then the pupil on top, so later
+/// layers paint over earlier ones like the real logo's z-order) instead of
+/// computing one flat pattern in a single pass.
 struct Canvas {
     cells: Vec<Vec<char>>,
     width: i32,
@@ -61,124 +61,75 @@ impl Canvas {
     }
 }
 
-/// Fallback badge, drawn only when the embedded logo fails to decode. It is
-/// still the former Venice badge (a `V`), not yet redrawn as the Retina iris —
-/// compositional elements (ring, 4 corner nodes, an interior lattice of
-/// thin canal lines with node dots, a bold `V` with a small tail at its
-/// point), not a pixel-identical reproduction: the source PNG's lattice is
-/// organic/hand-varied linework, which doesn't have a single "correct"
-/// parametric form to reproduce exactly in monospace text. Every element
-/// here is computed from row/column arithmetic (circle equation, line
-/// interpolation) rather than typed by eye, so proportions stay correct at
-/// any `height` instead of only looking right at whichever size it was
-/// eyeballed against.
+/// Fallback badge, drawn only when the embedded logo fails to decode: the
+/// Retina spectral iris (`UI/assets/logos/generate.py`) rebuilt in text. A
+/// tilted orbit behind, a ring of spectrum bars whose lengths follow the same
+/// harmonic profile as the real mark, and a star for a pupil. Every element
+/// is computed from row/column arithmetic (polar coordinates, an ellipse)
+/// rather than typed by eye, so proportions hold at any `height`.
 fn retina_badge_lines(height: u16) -> Vec<Line<'static>> {
     let h = (height as i32).max(10);
-    let radius_y = h as f64 / 2.0;
-    // Terminal character cells are roughly twice as tall as they are wide —
-    // without this correction a "circle" computed with equal x/y radius
-    // renders as a tall oval.
+    // Terminal cells are roughly twice as tall as they are wide: x distances
+    // are doubled so the iris renders round rather than as a tall oval.
     let aspect = 2.0;
-    let radius_x = radius_y * aspect;
-    let width = (radius_x * 2.0).round() as i32 + 1;
+    let radius = (h as f64 - 1.0) / 2.0;
+    let width = (radius * aspect * 2.0 * 1.3).round() as i32 + 1;
     let cx = width / 2;
     let cy = h / 2;
-
     let mut canvas = Canvas::new(width, h);
-
-    let ellipse_dx = |dy: f64| -> Option<f64> {
-        let t = dy / radius_y;
-        if t.abs() > 1.0 {
-            None
-        } else {
-            Some(radius_x * (1.0 - t * t).sqrt())
-        }
+    let plot = |canvas: &mut Canvas, x: f64, y: f64, ch: char| {
+        canvas.set(
+            (cy as f64 + y).round() as i32,
+            (cx as f64 + x * aspect).round() as i32,
+            ch,
+        );
     };
 
-    // Ring.
-    for row in 0..h {
-        let dy = row as f64 - cy as f64;
-        if let Some(dx) = ellipse_dx(dy) {
-            canvas.set(row, cx - dx.round() as i32, '●');
-            canvas.set(row, cx + dx.round() as i32, '●');
-        }
-    }
-
-    // 4 corner nodes, one per quadrant, matching the real logo's dots sitting
-    // just inside the ring near its top/bottom.
-    for &dy_frac in &[-0.78_f64, 0.78] {
-        let dy = radius_y * dy_frac;
-        if let Some(dx) = ellipse_dx(dy) {
-            let row = (cy as f64 + dy).round() as i32;
-            canvas.set(row, cx - dx.round() as i32, '◆');
-            canvas.set(row, cx + dx.round() as i32, '◆');
-        }
-    }
-
-    // Interior canal lattice: a handful of thin diagonals crossing behind
-    // the V, each with a node dot near its midpoint — evokes the real
-    // logo's secondary canals without claiming to reproduce their exact
-    // (hand-varied) paths.
-    let draw_diagonal = |canvas: &mut Canvas, from: (i32, i32), to: (i32, i32), node_at: f64| {
-        let steps = (to.0 - from.0).abs().max((to.1 - from.1).abs()).max(1);
-        for i in 0..=steps {
-            let t = i as f64 / steps as f64;
-            let row = from.0 + ((to.0 - from.0) as f64 * t).round() as i32;
-            let col = from.1 + ((to.1 - from.1) as f64 * t).round() as i32;
-            canvas.set(row, col, if row % 2 == 0 { '─' } else { '╲' });
-            if (t - node_at).abs() < 1.0 / steps as f64 {
-                canvas.set(row, col, '○');
-            }
-        }
+    // The orbit, drawn first so the bars paint over it: an ellipse tilted by
+    // about 24 degrees, like the real mark's.
+    let (tilt_cos, tilt_sin) = ((-0.42_f64).cos(), (-0.42_f64).sin());
+    let (orbit_rx, orbit_ry) = (radius * 1.25, radius * 0.4);
+    let orbit_point = |t: f64| {
+        let (ex, ey) = (orbit_rx * t.cos(), orbit_ry * t.sin());
+        (ex * tilt_cos - ey * tilt_sin, ex * tilt_sin + ey * tilt_cos)
     };
-    let r = radius_x.min(radius_y * aspect) * 0.85;
-    draw_diagonal(
-        &mut canvas,
-        (cy - (radius_y * 0.5) as i32, cx - r as i32),
-        (cy, cx),
-        0.5,
-    );
-    draw_diagonal(
-        &mut canvas,
-        (cy - (radius_y * 0.5) as i32, cx + r as i32),
-        (cy, cx),
-        0.5,
-    );
-    draw_diagonal(
-        &mut canvas,
-        (cy + (radius_y * 0.6) as i32, cx - r as i32),
-        (cy + (radius_y * 0.2) as i32, cx - (r * 0.3) as i32),
-        0.5,
-    );
-    draw_diagonal(
-        &mut canvas,
-        (cy + (radius_y * 0.6) as i32, cx + r as i32),
-        (cy + (radius_y * 0.2) as i32, cx + (r * 0.3) as i32),
-        0.5,
-    );
+    for i in 0..120 {
+        let (x, y) = orbit_point(i as f64 / 120.0 * std::f64::consts::TAU);
+        plot(&mut canvas, x, y, '·');
+    }
 
-    // The bold V, painted last so it sits in front of the lattice — sized
-    // to span most of the circle's interior, same converging-stroke
-    // arithmetic as before rather than a hand-typed shape.
-    let v_height = (radius_y * 1.5).round() as i32;
-    let v_top = cy - v_height + (radius_y * 0.35) as i32;
-    let v_glyph_width = 2 * (v_height - 1) + 3;
-    for vr in 0..v_height {
-        let left = vr;
-        let right = v_glyph_width - 1 - vr;
-        for w in 0..2 {
-            canvas.set(v_top + vr, cx - v_glyph_width / 2 + left + w, '█');
-            canvas.set(v_top + vr, cx - v_glyph_width / 2 + right - w, '█');
+    // The spectrum ring: bars from an inner radius outwards, each drawn with
+    // the box character closest to its direction.
+    let bars = 24;
+    let inner = radius * 0.35;
+    for i in 0..bars {
+        let a = std::f64::consts::TAU * i as f64 / bars as f64 - std::f64::consts::FRAC_PI_2;
+        let amp = 0.55
+            + 0.25 * (3.0 * a).sin()
+            + 0.15 * (7.0 * a + 1.3).sin()
+            + 0.08 * (13.0 * a + 0.4).sin();
+        let outer = inner + radius * (0.2 + 0.45 * amp);
+        let (dx, dy) = (a.cos(), a.sin());
+        let glyph = match ((dy.atan2(dx).to_degrees() + 360.0) % 180.0) as i32 {
+            0..=22 | 158..=180 => '─',
+            23..=67 => '╲',
+            68..=112 => '│',
+            _ => '╱',
+        };
+        let steps = ((outer - inner) * 2.0).ceil() as i32;
+        for s in 0..=steps {
+            let r = inner + (outer - inner) * s as f64 / steps.max(1) as f64;
+            plot(&mut canvas, r * dx, r * dy, glyph);
         }
     }
-    // Small tail continuing below the V's point down to the ring, with a
-    // node where it meets the bottom — matches the real logo's point not
-    // stopping abruptly at the V's apex.
-    let tail_start = v_top + v_height - 1;
-    for i in 0..3 {
-        canvas.set(tail_start + i, cx, '█');
+
+    // The moon on the orbit's front half, then the pupil.
+    let (mx, my) = orbit_point(0.55);
+    plot(&mut canvas, mx, my, '●');
+    plot(&mut canvas, 0.0, 0.0, '✦');
+    for (x, y) in [(-0.5, 0.0), (0.5, 0.0), (0.0, -1.0), (0.0, 1.0)] {
+        plot(&mut canvas, x, y, '·');
     }
-    canvas.set(tail_start + 3, cx, '○');
 
     canvas.into_lines()
 }
@@ -187,7 +138,7 @@ fn splash_caption_lines() -> Vec<Line<'static>> {
     vec![
         Line::default(),
         Line::from(Span::styled(
-            "V E N I C E",
+            "R E T I N A",
             Style::default()
                 .fg(RETINA_VIOLET)
                 .add_modifier(Modifier::BOLD),
@@ -493,4 +444,43 @@ fn draw_footer(frame: &mut Frame, area: Rect, app: &App) {
         .clone()
         .unwrap_or_else(|| default_hint.to_string());
     frame.render_widget(Paragraph::new(text), area);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn text(lines: &[Line<'static>]) -> Vec<String> {
+        lines
+            .iter()
+            .map(|l| l.spans.iter().map(|s| s.content.as_ref()).collect())
+            .collect()
+    }
+
+    #[test]
+    fn the_badge_has_the_requested_height_and_even_rows() {
+        for height in [10u16, 14, 18] {
+            let rows = text(&retina_badge_lines(height));
+            assert_eq!(rows.len(), height as usize);
+            let widths: Vec<usize> = rows.iter().map(|r| r.chars().count()).collect();
+            assert!(widths.windows(2).all(|w| w[0] == w[1]), "{widths:?}");
+        }
+    }
+
+    #[test]
+    fn the_badge_draws_the_iris_not_the_old_v() {
+        let rows = text(&retina_badge_lines(14)).join("\n");
+        assert!(rows.contains('✦'), "pupil missing:\n{rows}");
+        assert!(
+            rows.contains('│') && rows.contains('─'),
+            "bars missing:\n{rows}"
+        );
+        assert!(!rows.contains('█'), "the old V is still drawn:\n{rows}");
+    }
+
+    #[test]
+    fn the_splash_names_retina() {
+        let caption = text(&splash_caption_lines()).join("\n");
+        assert!(caption.contains("R E T I N A"), "{caption}");
+    }
 }

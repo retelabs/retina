@@ -1,12 +1,11 @@
-//! Prix vérifiés contre les pages officielles des fournisseurs le
-//! 2026-08-16 — jamais des agrégateurs (une première recherche via des
-//! sites d'agrégation a donné des chiffres contradictoires pour Hetzner,
-//! écartés au profit de `docs.hetzner.com` directement). Détail complet
-//! des sources dans `docs/cost-model.md`.
+//! Prices checked against the providers' official pages on 2026-08-16,
+//! never aggregators (a first search through aggregator sites gave
+//! contradictory figures for Hetzner, set aside for `docs.hetzner.com`
+//! itself). Full sources in `docs/cost-model.md`.
 //!
-//! Ces prix bougent (Hetzner a justement eu un ajustement mi-2026, qui a
-//! renommé/repricé le plan CX22 en CX23) — à revérifier avant toute
-//! décision réelle, pas seulement lus une fois ici.
+//! These prices move (Hetzner had an adjustment in mid-2026 that renamed and
+//! repriced the CX22 plan as CX23): re-check them before any real decision,
+//! do not rely on having read them once here.
 
 pub struct VmPricing {
     pub monthly_eur: f64,
@@ -14,14 +13,14 @@ pub struct VmPricing {
     pub label: &'static str,
 }
 
-/// Plan d'entrée Hetzner Cloud (2 vCPU / 4 Go RAM / 40 Go disque inclus),
-/// hors IPv4 et hors TVA. Source : docs.hetzner.com/general/infrastructure-and-availability/price-adjustment/,
-/// vérifié 2026-08-16 — le plan s'appelait CX22 avant l'ajustement de prix
-/// de mi-2026 qui l'a renommé CX23.
+/// Hetzner Cloud's entry plan (2 vCPU / 4 GB RAM / 40 GB disk included),
+/// excluding IPv4 and VAT. Source: docs.hetzner.com/general/infrastructure-and-availability/price-adjustment/,
+/// checked 2026-08-16. The plan was called CX22 before the mid-2026 price
+/// adjustment renamed it CX23.
 pub const HETZNER_CX23: VmPricing = VmPricing {
     monthly_eur: 5.49,
     included_disk_gb: 40.0,
-    label: "Hetzner CX23 (ex-CX22, 2 vCPU / 4 Go RAM)",
+    label: "Hetzner CX23 (formerly CX22, 2 vCPU / 4 GB RAM)",
 };
 
 pub struct ObjectStoragePricing {
@@ -30,27 +29,27 @@ pub struct ObjectStoragePricing {
     pub label: &'static str,
 }
 
-/// Source : backblaze.com/cloud-storage/pricing, vérifié 2026-08-16 —
-/// $6.95/To/mois, 10 Go gratuits, egress gratuit jusqu'à 3x le stockage
-/// (au-delà : $0.01/Go, non modélisé ici, ce chantier ne calcule que le
-/// coût de stockage, pas l'egress).
+/// Source: backblaze.com/cloud-storage/pricing, checked 2026-08-16:
+/// $6.95 per TB a month, 10 GB free, free egress up to 3x the stored volume
+/// (beyond that $0.01 per GB, not modelled here: this work computes storage
+/// cost only, not egress).
 pub const BACKBLAZE_B2: ObjectStoragePricing = ObjectStoragePricing {
     per_gb_month_usd: 6.95 / 1000.0,
     free_gb: 10.0,
     label: "Backblaze B2",
 };
 
-/// Source : cloudflare.com/plans, vérifié 2026-08-16 — le CDN du plan
-/// gratuit n'est pas mesuré (pas de coût par requête), contrairement aux
-/// Workers (compute) qui eux le sont. C'est le seul des 3 ajouts hybrides
-/// du diagramme "Venice Deployment" qui reste à 0€ à *tout* volume
-/// réaliste pour ce projet, pas seulement à volume zéro.
+/// Source: cloudflare.com/plans, checked 2026-08-16: the free plan's CDN is
+/// unmetered (no per-request cost), unlike Workers (compute), which are
+/// metered. It is the one of the three hybrid additions of the "Venice
+/// Deployment" diagram that stays at €0 at *any* realistic volume for this
+/// project, not only at zero volume.
 pub const CDN_MONTHLY_EUR: f64 = 0.0;
 
-/// GitHub Container Registry (ghcr.io/retelabs, depuis la migration du
-/// 2026-09-30). Vérifié sur docs.github.com (billing, GitHub Packages) :
-/// gratuit pour les paquets publics ; en privé, le plan Free d'organisation
-/// inclut 500 Mo de stockage et 1 Go de transfert par mois, bloqué au-delà
-/// sans moyen de paiement. La CI ne pousse une image que sur un tag `v*` ou à
-/// la main, ce qui reste dans ce quota — d'où 0€.
+/// GitHub Container Registry (ghcr.io/retelabs, since the 2026-09-30
+/// migration). Checked on docs.github.com (billing, GitHub Packages): free
+/// for public packages; for private ones the organisation Free plan includes
+/// 500 MB of storage and 1 GB of transfer a month, blocked beyond that
+/// without a payment method. CI pushes an image only on a `v*` tag or by
+/// hand, which stays within that quota, hence €0.
 pub const CONTAINER_REGISTRY_MONTHLY_EUR: f64 = 0.0;

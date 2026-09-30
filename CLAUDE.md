@@ -732,8 +732,15 @@ datées ci-dessus gardent l'ancien nom — c'est un journal, pas réécrit.
 Renommé : textes produit, `retina-tui`, réseaux `retina-edge/app/data`
 (prod), images `retina-kernel`/`retina-query-api`, conteneurs et réseaux
 `retina-orchestrator-*`, identifiants (`retina_stack`, `retina_block`…).
-**Pas encore** : le logo (PNG `UI/assets/logos/logo_venice_v*.png` et badge
-ASCII, un « V ») attend un nouveau visuel — décision de l'utilisateur. En
+Logo (2026-09-30) : un **R** tracé par une portée musicale à cinq lignes
+enroulée en galaxie spirale, des notes-étoiles reliées en courbe de
+métriques jusqu'à une étoile. Concept choisi par l'utilisateur, image
+DALL·E de référence, redessiné en vectoriel par
+`UI/assets/logos/generate.py` (SVG sombre/clair/transparent + variante
+simplifiée à 3 lignes pour ≤ 64 px, vérifiée à 16 px). Le TUI charge
+`retina-mark-small-light-1024.png` ; son accent passe au violet de la
+marque. **Reste** : le badge ASCII de secours (`ui::retina_badge_lines`,
+affiché seulement si le PNG ne se décode pas) dessine encore l'ancien « V ». En
 prod, le prochain déploiement crée les réseaux `retina-*` ; les anciens
 `venice-*` restent orphelins jusqu'à `docker network prune` (le volume
 `clickhouse-prod-data` n'est pas renommé, donc les données restent).

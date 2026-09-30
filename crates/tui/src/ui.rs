@@ -12,10 +12,10 @@ use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Tab
 use crate::app::{App, View, humanize_ago, span_tree};
 use crate::content;
 
-/// Approximates the teal in `UI/assets/logos/logo_venice_v1.png` — an
-/// `Rgb` value, so it only renders as true teal on a truecolor terminal;
+/// The violet of the Retina mark (`#7B6CF6`, `UI/assets/logos/`) — an
+/// `Rgb` value, so it only renders as true violet on a truecolor terminal;
 /// degrades to the nearest ANSI color elsewhere rather than failing.
-const RETINA_TEAL: Color = Color::Rgb(15, 110, 110);
+const RETINA_VIOLET: Color = Color::Rgb(123, 108, 246);
 
 fn now_unix_nano() -> u64 {
     SystemTime::now()
@@ -54,14 +54,15 @@ impl Canvas {
             .into_iter()
             .map(|row| {
                 let text: String = row.into_iter().collect();
-                Line::from(Span::styled(text, Style::default().fg(RETINA_TEAL)))
+                Line::from(Span::styled(text, Style::default().fg(RETINA_VIOLET)))
                     .alignment(Alignment::Center)
             })
             .collect()
     }
 }
 
-/// Stylized ASCII rendition of `UI/assets/logos/logo_venice_v1.png` — same
+/// Fallback badge, drawn only when the embedded logo fails to decode. It is
+/// still the former Venice badge (a `V`), not yet redrawn as the Retina R —
 /// compositional elements (ring, 4 corner nodes, an interior lattice of
 /// thin canal lines with node dots, a bold `V` with a small tail at its
 /// point), not a pixel-identical reproduction: the source PNG's lattice is
@@ -188,7 +189,7 @@ fn splash_caption_lines() -> Vec<Line<'static>> {
         Line::from(Span::styled(
             "V E N I C E",
             Style::default()
-                .fg(RETINA_TEAL)
+                .fg(RETINA_VIOLET)
                 .add_modifier(Modifier::BOLD),
         ))
         .alignment(Alignment::Center),
@@ -291,11 +292,11 @@ pub fn draw(frame: &mut Frame, app: &App) {
 fn retina_block(title: &str) -> Block<'_> {
     Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(RETINA_TEAL))
+        .border_style(Style::default().fg(RETINA_VIOLET))
         .title(Span::styled(
             title,
             Style::default()
-                .fg(RETINA_TEAL)
+                .fg(RETINA_VIOLET)
                 .add_modifier(Modifier::BOLD),
         ))
 }
@@ -313,7 +314,7 @@ fn draw_tabs(frame: &mut Frame, area: Rect, current: View) {
         .select(selected)
         .highlight_style(
             Style::default()
-                .fg(RETINA_TEAL)
+                .fg(RETINA_VIOLET)
                 .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
         );
     frame.render_widget(tabs, area);
@@ -346,7 +347,7 @@ fn draw_traces(frame: &mut Frame, area: Rect, app: &App) {
         ))
         .highlight_style(
             Style::default()
-                .bg(RETINA_TEAL)
+                .bg(RETINA_VIOLET)
                 .fg(Color::Black)
                 .add_modifier(Modifier::BOLD),
         )
@@ -410,7 +411,7 @@ fn draw_metrics(frame: &mut Frame, area: Rect, app: &App) {
                     Span::styled(
                         format!("{:<12}", kind.kind),
                         Style::default()
-                            .fg(RETINA_TEAL)
+                            .fg(RETINA_VIOLET)
                             .add_modifier(Modifier::BOLD),
                     ),
                     Span::raw(format!(

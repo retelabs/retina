@@ -1,3 +1,5 @@
+<p align="center"><img src="UI/assets/logos/retina-mark-dark.svg" width="160" alt="Retina logo: an R drawn as a music staff wound into a spiral galaxy"></p>
+
 # Retina
 
 Observability for LLM agent workflows, written in Rust. Retina ingests standard

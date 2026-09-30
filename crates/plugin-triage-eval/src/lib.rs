@@ -1,18 +1,18 @@
 //! `TriageEvalPlugin` — first "eval-as-plugin" (2026-08-17, initiated by
-//! the-client's user), same deterministic substrate as `plugin-medical`: read
+//! the first client's team), same deterministic substrate as `plugin-medical`: read
 //! attributes already on the span, apply a rule, write attributes/warnings.
 //! No LLM-as-judge here — see docs/interfaces/triage-eval-plugin.md for why
 //! that's a deliberately separate, still-open chantier (doesn't fit the
 //! synchronous/no-I/O `Plugin` contract, `docs/interfaces/plugin-contract-v0.md`).
 //!
-//! Grounded in real the-client code, not invented (`TriageAgent.cs`,
+//! Grounded in the first client's real code, not invented (`TriageAgent.cs`,
 //! `Domain/Entities/Service.cs`, `generate-rich-seed.py`): the triage
 //! prompt's vocabulary ("cardiologie, pédiatrie, neurologie, biologie...")
-//! is open-ended ("for example"), while the actual `Service` entities the-client
+//! is open-ended ("for example"), while the actual `Service` entities the client
 //! routes against are a fixed, much smaller list — confirmed drift already
 //! exists in their seed data (`biologie`/`neurologie` tags with no matching
 //! `Service` row). This plugin makes that drift visible via
-//! `eval.triage.tag_known`, it doesn't fix it (the-client decides what to do
+//! `eval.triage.tag_known`, it doesn't fix it (the client decides what to do
 //! about a false result).
 
 use kernel_model::AttributeValue;
@@ -20,7 +20,7 @@ use plugin_api::{KernelEvent, Plugin, PluginOutcome};
 
 /// Real `Service.Name` rows as seeded today (`generate-rich-seed.py:129-134`)
 /// — the default vocabulary if `TRIAGE_KNOWN_SERVICES` isn't set
-/// (`crates/kernel/src/main.rs`). Not a guess: this is the-client's actual current
+/// (`crates/kernel/src/main.rs`). Not a guess: this is the client's actual current
 /// data, provided by them, not a plausible-looking list invented for this
 /// plugin.
 pub const DEFAULT_KNOWN_SERVICES: &[&str] = &[
@@ -39,7 +39,7 @@ fn find_str<'a>(attrs: &'a [(String, AttributeValue)], key: &str) -> Option<&'a 
         .and_then(|(_, v)| v.as_str())
 }
 
-/// Same normalization the-client itself applies to the raw tag
+/// Same normalization the client itself applies to the raw tag
 /// (`TriageAgent.cs`: `.Trim().ToLowerInvariant()`) — comparing against
 /// that already-normalized form, not the raw prompt output, so this plugin
 /// doesn't invent its own notion of "equal".
@@ -72,9 +72,9 @@ impl Plugin for TriageEvalPlugin {
             return PluginOutcome::default();
         };
 
-        // Not yet emitted by the-client as of 2026-08-17 (docs/interfaces/triage-eval-plugin.md)
+        // Not yet emitted by the client as of 2026-08-17 (docs/interfaces/triage-eval-plugin.md)
         // — a real gap found while scoping this plugin, not assumed present.
-        // No-op until the-client adds it, same "not this vertical, nothing to
+        // No-op until the client adds it, same "not this vertical, nothing to
         // interpret" posture as plugin-medical's oncology.current_step gate.
         let Some(raw_tag) = find_str(&event.extra_attributes, "oncology.triage.tag") else {
             return PluginOutcome::default();

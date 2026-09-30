@@ -117,7 +117,7 @@ Deuxième vertical réel + câblage du plugin dans le pipeline (2026-08-15) :
 cloné en lecture seule) — gate de conformité HIPAA/GDPR déterministe
 (Presidio/NER) et gate HITL (`interrupt_before`), tous deux cités mot pour
 mot depuis le `CLAUDE.md` du repo source. Trouvaille notable : une deuxième
-implémentation du même vertical (`client-project`) fait juger la conformité
+implémentation du même vertical (le projet du client) fait juger la conformité
 RGPD **par le LLM lui-même** (texte libre, pas de sortie structurée) —
 divergence réelle entre deux systèmes de prod, pas supposée. Détails et
 mapping dans `docs/interfaces/oncology-governance.md`, `crates/oncology-replay`
@@ -546,10 +546,10 @@ Rédigées rétroactivement : `0001` (multi-tenant hors périmètre),
 rejeté). Aucune nouvelle décision tranchée par l'exercice — une
 rétro-documentation, pas une nouvelle négociation.
 
-## Premier client réel branché : client-project (the-client) (2026-08-17, en cours)
+## Premier client réel branché (« le client ») (2026-08-17, en cours)
 
 Venice sert désormais de kernel d'observabilité pour un vrai projet client
-(`a separate client project`,
+(projet client, dépôt séparé,
 SaaS santé .NET, agents triage/résumé/conformité/enrichissement d'appel,
 plugin `MedicalPlugin` branché temporairement dessus — le nom "oncology"
 sera généralisé plus tard). Le câblage OTLP/gRPC fonctionne en conditions
@@ -558,19 +558,19 @@ manques sont ressortis et scopés avec l'utilisateur avant tout code (règle
 permanente du projet) : coût $ par span, et suivi de conversation/thread.
 
 **Suivi de conversation** : `conversation_id` existe déjà dans le schéma
-mais rien ne le peuplait côté the-client. Exploration réelle du code the-client (pas
+mais rien ne le peuplait côté client. Exploration réelle du code du client (pas
 supposée) : `AgentOrchestrator.RunAsync` est le seul point d'ouverture du
 span `invoke_agent` pour les 4 agents ; seul l'enrichissement d'appel
 (`EnrichCallWithAiCommand`) porte un id métier réel (`CallId`) sur ce
 chemin — triage/résumé/conformité sont des endpoints "playground" texte
 libre (`RunAgentQuery`/`AiController`), sans identifiant de domaine.
 Fausse piste éliminée : `OutboxEntry.CorrelationId` existe dans leur modèle
-mais n'est jamais peuplé. **Décision côté the-client (leur équipe, pas Venice)**,
+mais n'est jamais peuplé. **Décision côté client (leur équipe, pas Venice)**,
 vérifiée contre leur frontend aussi (`AiComponent`, aucun `callId` sur ce
 chemin) : on laisse tel quel — construire le lien manquant serait une vraie
 feature de navigation, hors scope pour l'instant. Conséquence côté kernel :
 seul l'agent d'enrichissement d'appel portera jamais un `conversation_id`
-non-null pour the-client dans l'état actuel, pas une limite à corriger côté
+non-null pour le client dans l'état actuel, pas une limite à corriger côté
 Venice.
 
 **Calculateur de coût $ — fait.** Trois questions scopées avec l'utilisateur
@@ -611,7 +611,7 @@ demandés et non vérifiés cette session — un span de ces fournisseurs reste
 
 Lacune connue, documentée plutôt que masquée : aucune télémétrie réelle
 n'existait pour confirmer le format exact des chaînes `request_model`/
-`response_model` envoyées en pratique (the-client ne peuple aujourd'hui aucun des
+`response_model` envoyées en pratique (le client ne peuple aujourd'hui aucun des
 deux) — la table de prix fait un lookup par correspondance exacte, à
 vérifier contre de vraies réponses d'API avant de faire confiance à sa
 couverture au-delà des montants par token eux-mêmes.
@@ -629,8 +629,8 @@ via `cargo test -p clickhouse-sink -p query-api -- --ignored` contre
 relu via `GET /traces/{trace_id}` et `GET /metrics/summary`, coût exact
 au centime près.
 
-**Câblage `gen_ai.usage.*`/`request.model` côté the-client — fait, vérifié en
-conditions réelles (2026-08-17).** Une fois `dev` poussé (`926e6a5`), the-client a
+**Câblage `gen_ai.usage.*`/`request.model` côté client — fait, vérifié en
+conditions réelles (2026-08-17).** Une fois `dev` poussé (`926e6a5`), le client a
 câblé ses 3 clients IA pour poser `gen_ai.provider.name`/`request.model`/
 `usage.input_tokens`/`usage.output_tokens` sur l'`Activity` (leur commit
 `d1c632f`, noms vérifiés contre `AGENT_RUN_KNOWN_KEYS` réel plutôt que
@@ -639,39 +639,39 @@ Test réel via `/api/ai/triage` : `provider_name=anthropic`,
 `request_model=claude-sonnet-5`, `input_tokens=229`, `output_tokens=7` →
 `cost_usd=0.000528`, vérifié à la main (`229×$2/M + 7×$10/M`) et exact.
 `GET /metrics/summary` agrège correctement `total_cost_usd` pour
-`agent_run` (le seul kind que the-client émet) ; `model_call`/`tool_call` restent
-`null`, attendu puisque the-client ne les émet pas. Premier chiffrage de coût $
+`agent_run` (le seul kind que le client émet) ; `model_call`/`tool_call` restent
+`null`, attendu puisque le client ne les émet pas. Premier chiffrage de coût $
 réel de bout en bout depuis un vrai appel client, pas seulement un span
 synthétique — clôt le chantier ouvert en début de journée (l'écart constaté
 avec LangSmith).
 
 **Évals sans LangSmith — volet 1 (déterministe) fait, volet 2 en attente
-(2026-08-17).** Deuxième manque identifié par l'utilisateur the-client face à
+(2026-08-17).** Deuxième manque identifié par l'équipe du client face à
 LangSmith : des évals dans le même esprit déterministe que `MedicalPlugin`
 plutôt que le pattern LLM-as-judge de LangSmith — argument économique
 explicite (des boucles d'eval en CI avec juge LLM répété coûtent cher à
 chaque run, maximiser le déterministe réduit ce coût directement).
 
-Cas réels demandés et reçus de the-client (pas inventés) pour les 3 agents
+Cas réels demandés et reçus du client (pas inventés) pour les 3 agents
 (triage/summary/compliance) avant de designer quoi que ce soit — un seul
 avait un référentiel canonique comparable à une sortie catégorielle
 (`crates/plugin-triage-eval`, détail complet et sources dans
 `docs/interfaces/triage-eval-plugin.md`) : le prompt de triage a un
 vocabulaire ouvert ("for example: ..."), mais le vrai référentiel
-`Service` que the-client utilise ailleurs n'a que 6 valeurs — dérive déjà
+`Service` que le client utilise ailleurs n'a que 6 valeurs — dérive déjà
 confirmée dans leurs données de seed (`biologie`/`neurologie` sans
 `Service` correspondant). Summary/compliance restent de la prose libre,
 sans équivalent déterministe.
 
 `TriageEvalPlugin` (même substrat que `MedicalPlugin` : lit un attribut,
 applique une règle, écrit attributs/warnings) pose `eval.triage.tag_known`
-à partir de `oncology.triage.tag`, comparé (normalisé comme the-client le fait
+à partir de `oncology.triage.tag`, comparé (normalisé comme le client le fait
 déjà) à un référentiel configurable (`TRIAGE_KNOWN_SERVICES`, défaut = les
-6 vraies valeurs the-client — pas une liste vide, qui ferait échouer tous les
+6 vraies valeurs du client — pas une liste vide, qui ferait échouer tous les
 tags). Câblé dans `crates/kernel` comme les deux autres plugins
 (`ENABLED_PLUGINS`). 7 + 2 tests unitaires.
 
-**Vérifié en conditions réelles (2026-08-17, même jour).** the-client a câblé
+**Vérifié en conditions réelles (2026-08-17, même jour).** Le client a câblé
 `oncology.triage.tag` (`AgentOrchestrator.RunAsync`, commit `8a47b80`),
 reconstruit sa stack depuis `dev` (`b422db3`), et testé un vrai appel
 ("chute à vélo, genou gonflé" → tag `traumatologie`) — **un vrai défaut
@@ -692,7 +692,7 @@ attributs sensibles opt-in/désactivés par défaut) — le cas réel
 `ComplianceAgent` traite nom/date de naissance/NIR/statut VIH en clair,
 faire transiter et stocker ce texte dans Venice (même 90 jours de
 rétention) aurait été un vrai risque de conformité, pas théorique.
-**Décision retenue** : le jugement tourne côté client (the-client ou tout futur
+**Décision retenue** : le jugement tourne côté client (le client ou tout futur
 client), avec son propre texte/sa propre clé API, jamais transmis à
 Venice — seul le verdict structuré (`eval.summary.*`/`eval.compliance.*`,
 typé, jamais de texte libre) est posté en attribut, absorbé par
@@ -717,7 +717,7 @@ réseau/images Docker dans `crates/orchestrator`, container ClickHouse dev)
 et toute la prose (`CLAUDE.md`, `README.md`, `docs/`). Aucun crate n'était
 nommé "trellis" littéralement, pas de renommage de package Cargo
 nécessaire. **Volontairement pas fait** : renommage du repo GitLab
-(casserait le remote `origin` que la session the-client utilise déjà) et du
+(casserait le remote `origin` que la session du client utilise déjà) et du
 répertoire local — reportés avec l'accord explicite de l'utilisateur, notés
 en mémoire pour ne pas être oubliés d'une session à l'autre.
 
@@ -795,8 +795,8 @@ proportions relatives), pas une copie pixel par pixel.
 Vérifié à quatre niveaux : 5 tests unitaires (`span_tree`/`humanize_ago`,
 y compris un cas de cycle à 2 nœuds et une référence de parent hors trace)
 sans terminal ; 4 tests d'intégration `--ignored` contre le vrai
-`query-api` déjà en service avec de vraies données the-client (5 traces, 3
-kinds, 7 `spans_with_warnings` — mêmes chiffres que la vérification the-client
+`query-api` déjà en service avec de vraies données du client (5 traces, 3
+kinds, 7 `spans_with_warnings` — mêmes chiffres que la vérification du client
 plus tôt dans la session) ; un vrai lancement du binaire dans un
 pseudo-terminal confirmant un cycle démarrage/arrêt propre ; et **le rendu
 visuel réel vérifié pour de vrai** (correction d'une limite annoncée trop
@@ -804,7 +804,7 @@ tôt) — pseudo-terminal avec taille explicite (`TIOCSWINSZ`) + émulation
 d'écran via `pyte` (Python) pour reconstruire ce qui s'affiche réellement,
 pas juste le flux ANSI brut : le glyphe V symétrique et centré, les 3 vues
 avec bordures/tabs qui s'affichent correctement, les vraies traces/coûts/
-warnings the-client visibles à l'écran.
+warnings du client visibles à l'écran.
 
 **Troisième retour** ("y'a que ascii art ?") : question posée à
 l'utilisateur plutôt que tranchée seule — vrai choix technique
@@ -984,7 +984,7 @@ produit... écris-le en anglais") : `content.rs` réécrit entièrement — 4
 pages ramenées à 3 (Venice / What it does / Get started), ton produit en
 anglais plutôt qu'un compte-rendu technique en français. Retiré
 explicitement : l'histoire du renommage trellis→Venice et les détails de
-vérification/tests (the-client, fraudos, dates) — ce texte s'adresse à qui
+vérification/tests (client, fraudos, dates) — ce texte s'adresse à qui
 utilise Venice, pas à qui l'a construit ; l'historique complet reste dans
 ce fichier, pas dans l'app. L'onglet "Aide" renommé "Help" en cohérence
 (la page 3 dit littéralement "look for Help"). `README.md` mis à jour en
@@ -1036,14 +1036,9 @@ ClickHouse/Docker — un vrai bug trouvé au passage (`clippy -D warnings`
 jamais repassé depuis les derniers changements `crates/tui`, `int_plus_one`
 sur un test, corrigé).
 
-**Nom de domaine — décidé, achat en attente.** `example.com` : "shunting
-yard" est à la fois le terme ferroviaire (gare de triage) et le nom de
-l'algorithme de Dijkstra, double sens qui parle à n'importe quel ingénieur.
-Disponibilité vérifiée via RDAP (`rdap.org`, pas de suppositions) parmi une
-dizaine de candidats sur le thème ferroviaire/triage — `.io` choisi plutôt
-que `.dev`. Prix comparés (Porkbun moins cher, ~30$/an, vs OVH ~31-38€
-selon HT/TTC la 1ère année) — achat laissé à l'utilisateur, je n'ai pas
-d'outil de paiement/navigateur pour l'exécuter moi-même.
+**Nom de domaine — décidé.** Un domaine dédié pour la prod (non cité ici :
+`docker/.env.prod.example` utilise `example.com`), disponibilité vérifiée
+via RDAP (`rdap.org`), achat laissé à l'utilisateur.
 
 **VM — CX33 plutôt que CX23.** Le cost-model avait retenu CX23 (2 vCPU/4Go)
 comme repère de coût, jamais comme décision finale de dimensionnement.
@@ -1070,7 +1065,7 @@ déploiement public ; `docker/.env.prod` ajouté à `.gitignore`.
 
 **Segmentation réseau — 3 zones, à la demande explicite de l'utilisateur**
 ("intéressant d'isoler le network en fonction de l'appli"), même schéma que
-client-project (`fn-edge`/`fn-app`/`fn-data`) plutôt que le réseau bridge
+un projet client existant (`fn-edge`/`fn-app`/`fn-data`) plutôt que le réseau bridge
 implicite unique posé initialement : `venice-edge` (Caddy seul) /
 `venice-app` (Caddy + kernel + query-api) / `venice-data` (kernel +
 query-api + ClickHouse — Caddy n'y est jamais rattaché). **Vérifié en

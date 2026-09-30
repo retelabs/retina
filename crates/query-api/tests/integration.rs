@@ -365,8 +365,8 @@ async fn requests_without_a_valid_bearer_token_are_rejected() {
 #[ignore = "requires `scripts/dev-clickhouse.sh up`"]
 async fn a_second_client_with_its_own_token_can_also_authenticate() {
     // Proves build_app really accepts more than one valid token — the real
-    // motivation for this (a second real client, e.g. second-client, getting its
-    // own revocable credential instead of sharing the-client's/fraudos-replay's).
+    // motivation for this (a second real client getting its
+    // own revocable credential instead of sharing the first client's).
     let client = test_client();
     clickhouse_sink::run_migrations(&client).await.expect(
         "failed to apply migrations — is ClickHouse running? (scripts/dev-clickhouse.sh up)",

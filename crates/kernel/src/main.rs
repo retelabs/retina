@@ -34,8 +34,8 @@ fn env_or(key: &str, default: &str) -> String {
 }
 
 /// `KERNEL_API_KEYS_EXTRA`: comma-separated additional valid tokens, on top
-/// of the required `KERNEL_API_KEY` — a second real client (second-client,
-/// alongside the-client/fraudos-replay) gets its own revocable credential instead
+/// of the required `KERNEL_API_KEY` — a second real client (alongside
+/// the first client and fraudos-replay) gets its own revocable credential instead
 /// of sharing the first one's. `None`/unset means "no extra tokens", same
 /// shape as `select_enabled`/`triage_known_services` above: a pure function,
 /// testable without touching the environment.
@@ -90,7 +90,7 @@ fn select_enabled<T>(available: Vec<(&'static str, T)>, requested: Option<&str>)
 
 /// `TRIAGE_KNOWN_SERVICES`: comma-separated vocabulary override for
 /// `TriageEvalPlugin` (docs/interfaces/triage-eval-plugin.md) — `None` means
-/// "use the-client's real current `Service` list" (`DEFAULT_KNOWN_SERVICES`), not
+/// "use the first client's real `Service` list" (`DEFAULT_KNOWN_SERVICES`), not
 /// "disable the check" (an empty effective vocabulary would flag every tag
 /// as unknown, which is worse than just using real data as the default).
 /// Takes `Option<&str>` rather than reading the env var itself — same shape
@@ -204,7 +204,7 @@ mod tests {
     }
 
     #[test]
-    fn triage_known_services_defaults_to_the_clients_real_service_list_when_unset() {
+    fn triage_known_services_defaults_to_the_real_service_list_when_unset() {
         let result = triage_known_services(None);
         assert_eq!(
             result,

@@ -27,14 +27,31 @@ fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
 }
 
+/// `ORCHESTRATOR_API_KEY` is required and must not be blank: `ORCHESTRATOR_API_KEY=` (set but empty, a
+/// common `.env` slip) would otherwise start the process with the token
+/// `""`, i.e. accept `authorization: Bearer ` — fail closed on it exactly
+/// like on an unset key. Pure function, testable without the environment.
+fn primary_api_key(raw: Option<String>) -> Result<String, String> {
+    match raw {
+        Some(key) if !key.trim().is_empty() => Ok(key),
+        Some(_) => Err(
+            "ORCHESTRATOR_API_KEY is set but blank — see docs/interfaces/kernel-auth.md"
+                .to_string(),
+        ),
+        None => {
+            Err("ORCHESTRATOR_API_KEY must be set — see docs/interfaces/kernel-auth.md".to_string())
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bind_addr = env_or("ORCHESTRATOR_BIND", "127.0.0.1:9000");
     // Fails closed (docs/interfaces/kernel-auth.md): resolved before any
     // Docker access, same order as crates/kernel — a config error must
     // fail before touching a network or system resource, not after.
-    let api_key = std::env::var("ORCHESTRATOR_API_KEY")
-        .expect("ORCHESTRATOR_API_KEY must be set — see docs/interfaces/kernel-auth.md");
+    let api_key = primary_api_key(std::env::var("ORCHESTRATOR_API_KEY").ok())
+        .unwrap_or_else(|e| panic!("{e}"));
 
     let docker = Docker::connect_with_local_defaults()?;
 
@@ -53,4 +70,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     axum::serve(listener, app).await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn primary_api_key_refuses_unset_and_blank() {
+        assert!(primary_api_key(None).is_err());
+        assert!(primary_api_key(Some(String::new())).is_err());
+        assert!(primary_api_key(Some("  ".to_string())).is_err());
+        assert_eq!(primary_api_key(Some("k".to_string())).unwrap(), "k");
+    }
 }

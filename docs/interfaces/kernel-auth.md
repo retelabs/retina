@@ -64,8 +64,10 @@ convention des deux côtés pour que la configuration reste symétrique
 client query-api).
 
 - **Échec fermé** : si `KERNEL_API_KEY`/`QUERY_API_KEY`/`ORCHESTRATOR_API_KEY`
-  n'est pas défini au démarrage, le binaire concerné refuse de démarrer
-  (`expect`/panic explicite) plutôt que de tourner sans authentification. Un
+  n'est pas défini au démarrage, **ou défini mais vide/blanc** (`KERNEL_API_KEY=`
+  dans un `.env`, qui ferait accepter `Bearer ` tout court), le binaire
+  concerné refuse de démarrer (`primary_api_key`, panic explicite) plutôt que
+  de tourner sans authentification. Un
   contrôle de sécurité qu'on peut oublier d'activer par défaut n'en est pas
   un.
 - **Comparaison en temps constant** : la comparaison du jeton reçu contre le

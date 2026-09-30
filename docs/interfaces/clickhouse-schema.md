@@ -1,50 +1,54 @@
-# clickhouse-schema — driver Rust et schéma de stockage (étape 3 du kernel)
+# clickhouse-schema: the Rust driver and the storage schema (kernel step 3)
 
-- Sources faisant autorité :
-  - driver : https://docs.rs/clickhouse (crate `clickhouse`, v0.15.1, vérifié via docs.rs)
-  - schéma : conception propre à ce projet (pas une spec externe), mais documentée
-    ici avec la même rigueur car c'est la frontière kernel-model ↔ stockage
-- Date de vérification : 2026-08-14
-- Portée : instance ClickHouse unique (dossier section 2.2 étape 3), locale
-  pour l'instant (`docker/docker-compose.clickhouse.yml`) — le choix
-  prod (auto-hébergé vs BigQuery/ADX, GCP vs Azure) reste une question
-  ouverte (dossier section 5), non tranchée ici. Construire contre le
-  ClickHouse local ne préjuge pas de ce choix.
+- Authoritative sources:
+  - driver: https://docs.rs/clickhouse (crate `clickhouse`, v0.15.1 at the time,
+    checked on docs.rs; 0.15.2 since 2026-09-30)
+  - schema: this project's own design (not an external spec), but documented
+    here with the same rigour because it is the kernel-model ↔ storage boundary
+- Verification date: 2026-08-14
+- Scope: a single ClickHouse instance (dossier section 2.2 step 3), local at the
+  time (`docker/docker-compose.clickhouse.yml`). The production choice
+  (self-hosted vs BigQuery/ADX, GCP vs Azure) was still open (dossier section 5;
+  since decided in ADR 0003); building against the local ClickHouse did not
+  prejudge it.
+- **Server version**: pinned to `clickhouse/clickhouse-server:26.8.15.10`
+  everywhere since 2026-09-30. ClickHouse 26.9 breaks the `clickhouse` 0.15 client
+  during migrations (`Decompression("incorrect magic number")`); change the
+  version only after `scripts/test-integration.sh` passes against the new one.
 
-## Driver Rust (`clickhouse` crate)
+## Rust driver (`clickhouse` crate)
 
-- Transport HTTP (port 8123, celui déjà exposé par `docker-compose.clickhouse.yml`)
-  — pas le protocole natif (port 9000).
-- Construction : `Client::default().with_url(...).with_user(...).with_password(...).with_database(...)`.
-- Une struct de ligne = `#[derive(Row, Serialize, Deserialize)]` + `serde`.
-- Insertion : `client.insert::<Row>("table").await?` puis `.write(&row).await?` pour
-  chaque ligne, puis **`.end().await?` obligatoire** — *"If `end()` isn't called,
-  the `INSERT` is aborted."* Pas de garantie ligne par ligne à l'intérieur d'un
-  batch : soit tout le batch est committé (`end()` réussit), soit rien ne l'est.
-  **Implication directe** : le `SpanSink` ne peut pas rester "un événement à la
-  fois, infaillible" comme le stub `InMemorySink` de l'étape 2 — il doit devenir
-  **async, par lot (par requête `Export`), et faillible**.
-- Mapping de types (table du driver) :
+- HTTP transport (port 8123, the one `docker-compose.clickhouse.yml` already
+  exposes), not the native protocol (port 9000).
+- Construction: `Client::default().with_url(...).with_user(...).with_password(...).with_database(...)`.
+- A row struct = `#[derive(Row, Serialize, Deserialize)]` + `serde`.
+- Insertion: `client.insert::<Row>("table").await?`, then `.write(&row).await?` for
+  each row, then **`.end().await?`, mandatory**: *"If `end()` isn't called, the
+  `INSERT` is aborted."* No row-by-row guarantee inside a batch: either the whole
+  batch is committed (`end()` succeeds) or none of it is. **Direct
+  consequence**: the `SpanSink` cannot stay "one event at a time, infallible" like
+  step 2's `InMemorySink` stub; it must become **async, batched (per `Export`
+  request), and fallible**.
+- Type mapping (the driver's table):
 
-  | Type ClickHouse | Type Rust |
+  | ClickHouse type | Rust type |
   |---|---|
   | `(U)Int(8-64)` | `(u)i(8-64)` |
   | `String` | `String` / `&str` |
-  | `FixedString(N)` | `[u8; N]` (et `Option<[u8; N]>` pour `Nullable(FixedString(N))`) |
-  | `DateTime64(_)` | `i64` (ticks bruts) ou `chrono::DateTime<Utc>` |
+  | `FixedString(N)` | `[u8; N]` (and `Option<[u8; N]>` for `Nullable(FixedString(N))`) |
+  | `DateTime64(_)` | `i64` (raw ticks) or `chrono::DateTime<Utc>` |
   | `Array(_)` | `Vec<_>` |
-  | `Map(K, V)` | `HashMap<K, V>` ou `Vec<(K, V)>` |
+  | `Map(K, V)` | `HashMap<K, V>` or `Vec<(K, V)>` |
   | `Nullable(_)` | `Option<_>` |
 
-## Schéma retenu : une seule table `spans` (pas une par type d'événement)
+## The schema: a single `spans` table (not one per event type)
 
-**Pourquoi une table unique plutôt que 3** : l'étape 4 du kernel doit pouvoir
-"récupérer l'arbre d'une trace" — un `trace_id` mélange souvent des spans
-`ModelCallEvent`/`ToolCallEvent`/`AgentRunEvent` en parent/enfant. Une table
-large avec colonnes nullables pour les champs spécifiques à chaque type,
-plus une colonne `kind` discriminante, évite une jointure à 3 tables pour
-reconstruire un arbre. C'est aussi la pratique standard des exporteurs
-ClickHouse OTel-natifs.
+**Why one table rather than three**: kernel step 4 must be able to "fetch a
+trace's tree", and one `trace_id` often mixes `ModelCallEvent`/`ToolCallEvent`/
+`AgentRunEvent` spans as parent and child. A wide table with nullable columns for
+each type's specific fields, plus a discriminating `kind` column, avoids a
+three-table join to rebuild a tree. It is also standard practice for
+OTel-native ClickHouse exporters.
 
 ```sql
 CREATE TABLE spans
@@ -89,78 +93,72 @@ PARTITION BY toYYYYMMDD(start_time)
 ORDER BY (trace_id, start_time, span_id)
 ```
 
-- `ORDER BY (trace_id, start_time, span_id)` : optimise "tous les spans d'une
-  trace" (étape 4), pas d'index secondaire nécessaire pour ce cas au MVP.
-- `PARTITION BY toYYYYMMDD(start_time)` : coûte rien à poser maintenant même si
-  "pas de rétention fine au MVP" (dossier section 4) — évite une migration de
-  schéma le jour où une politique de rétention par partition est ajoutée.
-  **Ce jour est arrivé (2026-08-15)** : un TTL de 90 jours existe maintenant
-  sur `start_time`, voir `docs/interfaces/clickhouse-retention.md` — c'est
-  précisément ce partitionnement qui le rend peu coûteux (suppression par
-  partition entière, pas ligne par ligne).
-- `agent_name` est réutilisé entre `ToolCallEvent` (l'agent qui exécute l'outil)
-  et `AgentRunEvent` (l'agent lui-même) — même colonne, sémantique cohérente
-  dans les deux cas (dossier ne distingue pas les deux).
+- `ORDER BY (trace_id, start_time, span_id)`: optimises "every span of a trace"
+  (step 4); no secondary index needed for that case in the MVP.
+- `PARTITION BY toYYYYMMDD(start_time)`: costs nothing to set now even with "no
+  fine-grained retention in the MVP" (dossier section 4), and avoids a schema
+  migration the day a per-partition retention policy is added. **That day came
+  (2026-08-15)**: a 90-day TTL now exists on `start_time`, see
+  `docs/interfaces/clickhouse-retention.md`. This partitioning is precisely what
+  makes it cheap (whole partitions dropped, not row by row).
+- `agent_name` is shared between `ToolCallEvent` (the agent running the tool) and
+  `AgentRunEvent` (the agent itself): the same column, with consistent semantics
+  in both cases (the dossier does not distinguish them).
 - **`cost_usd Nullable(Float64)` (migration `0003_add_cost_usd.sql`,
-  2026-08-17)** : coût $ calculé une seule fois à l'ingestion
-  (`crates/pricing`), jamais recalculé après coup. Détail complet (table de
-  prix, comptabilité de cache par fournisseur) :
-  `docs/interfaces/cost-calculation.md`.
+  2026-08-17)**: the $ cost computed once at ingestion (`crates/pricing`), never
+  recomputed afterwards. Full details (price table, cache accounting per
+  provider): `docs/interfaces/cost-calculation.md`.
 
-## `extra_attributes` : `Map(String, String)`, pas `Map(String, AnyValue)`
+## `extra_attributes`: `Map(String, String)`, not `Map(String, AnyValue)`
 
-`AttributeValue` (kernel-model) peut être imbriqué (`Array`, `KeyValueList`),
-mais ClickHouse `Map` n'accepte pas de type de valeur récursif pratique ici.
-**Décision** : stringifier chaque valeur (nombres/bool en `to_string()`, bytes
-en hex, imbriqué en représentation debug lisible mais non ré-analysable).
-C'est **avec perte** pour les types imbriqués — acceptable pour le MVP car
-les seuls attributs `gen_ai.*` potentiellement imbriqués/complexes
-(`gen_ai.tool.call.arguments`/`result`, type `any`) sont `opt_in` et
-désactivés par défaut par notre propre politique PII (dossier section 2.1).
-À revisiter (colonne `JSON` native ou une vraie sérialisation JSON) si des
-attributs imbriqués deviennent courants.
+`AttributeValue` (kernel-model) can be nested (`Array`, `KeyValueList`), but a
+ClickHouse `Map` does not take a practical recursive value type here.
+**Decision**: stringify each value (numbers/bools with `to_string()`, bytes in
+hex, nested values as a readable but non-reparsable debug representation). This
+is **lossy** for nested types, acceptable for the MVP because the only
+potentially nested or complex `gen_ai.*` attributes
+(`gen_ai.tool.call.arguments`/`result`, type `any`) are `opt_in` and disabled by
+default by our own PII policy (dossier section 2.1). To revisit (a native `JSON`
+column or a real JSON serialisation) if nested attributes become common.
 
-## Conversions à risque (mêmes réflexes que pour l'ingestion)
+## Risky conversions (the same reflexes as for ingestion)
 
-- `start_time_unix_nano`/`end_time_unix_nano` (`u64`, wire OTLP) →
-  `DateTime64(9)` stocké comme `i64` côté driver : conversion `u64 -> i64`
-  **vérifiée** (`i64::try_from`), pas un cast nu — sûr jusqu'en 2262, mais le
-  cast doit rester explicite et faillible plutôt que supposé toujours correct.
-- Persistance **tout ou rien par lot** (voir plus haut) : un span
-  structurellement valide qui échoue à la persistance doit être compté dans
-  `rejected_spans` de la réponse OTLP (succès partiel), au même titre qu'un
-  span malformé — le client OTLP n'a pas à distinguer "rejeté à la validation"
-  de "rejeté à l'écriture", les deux veulent dire "pas persisté".
+- `start_time_unix_nano`/`end_time_unix_nano` (`u64`, OTLP wire) →
+  `DateTime64(9)` stored as `i64` by the driver: a **checked** `u64 -> i64`
+  conversion (`i64::try_from`), not a bare cast. Safe until 2262, but the cast
+  must stay explicit and fallible rather than assumed always correct.
+- **All-or-nothing persistence per batch** (see above): a structurally valid span
+  that fails to persist must be counted in the OTLP response's `rejected_spans`
+  (partial success), like a malformed span. The OTLP client does not need to tell
+  "rejected at validation" from "rejected at write": both mean "not persisted".
 
-## Ignoré volontairement pour le MVP
+## Deliberately ignored in the MVP
 
-- Pas de `ReplacingMergeTree`/déduplication : les doublons de spans que le
-  protocole OTLP autorise explicitement (docs/interfaces/otlp-ingestion.md,
-  "Known Limitations") ne sont pas dédupliqués au MVP — cohérent avec "pas de
-  rétention fine ni de logique avancée" (dossier section 4).
-- Pas de table séparée pour les extensions provider (ex. `aws.bedrock.*`) —
-  elles vivent dans `extra_attributes` comme le reste, conformément à la
-  section 2.1 du dossier ("stockées séparément... pour ne pas forcer une
-  normalisation qui perdrait l'info").
-- Pas de connexion TLS/rustls — HTTP simple vers le ClickHouse local ; à
-  revoir si le stockage prod est distant (question encore ouverte, section 5).
+- No `ReplacingMergeTree`/deduplication: the span duplicates the OTLP protocol
+  explicitly allows (docs/interfaces/otlp-ingestion.md, "Known Limitations") are
+  not deduplicated in the MVP, consistent with "no fine-grained retention or
+  advanced logic" (dossier section 4).
+- No separate table for provider extensions (e.g. `aws.bedrock.*`): they live in
+  `extra_attributes` like everything else, in line with dossier section 2.1
+  ("stored separately... so as not to force a normalisation that would lose the
+  information").
+- No TLS/rustls connection: plain HTTP to ClickHouse, which sits on an internal
+  Docker network in every deployment so far.
 
-## Erreur trouvée en testant contre un vrai serveur (pas devinable depuis la doc seule)
+## Errors found by testing against a real server (not guessable from the docs)
 
-Le schéma initial utilisait `Nullable(LowCardinality(String))` pour
-`provider_name`/`agent_invocation_kind`. ClickHouse 26.7.3 le refuse à la
-création de table : *"Nested type LowCardinality(String) cannot be inside
-Nullable type (ILLEGAL_TYPE_OF_ARGUMENT)"* — l'ordre correct est
-`LowCardinality(Nullable(String))`. Ni la doc du driver Rust ni le dossier ne
-mentionnaient cette contrainte ; seul le test d'intégration réel
-(`crates/clickhouse-sink/tests/integration.rs`, `--ignored`, contre
-`scripts/dev-clickhouse.sh up`) l'a révélée. Rappel que documenter un contrat
-depuis la doc ne dispense pas de le vérifier en conditions réelles quand
-c'est possible.
+The initial schema used `Nullable(LowCardinality(String))` for
+`provider_name`/`agent_invocation_kind`. ClickHouse 26.7.3 refuses it when
+creating the table: *"Nested type LowCardinality(String) cannot be inside Nullable
+type (ILLEGAL_TYPE_OF_ARGUMENT)"*. The correct order is
+`LowCardinality(Nullable(String))`. Neither the Rust driver's docs nor the dossier
+mentioned this constraint; only the real integration test
+(`crates/clickhouse-sink/tests/integration.rs`, `--ignored`) revealed it. A
+reminder that documenting a contract from the docs does not replace checking it
+in real conditions when possible.
 
-Deuxième trouvaille du même test : binder un `[u8; 16]` (trace_id) directement
-dans un `?` d'une requête paramétrée sérialise en `Tuple(UInt8, ...)` côté
-driver, pas en littéral `FixedString` — ClickHouse répond `NO_COMMON_TYPE` en
-comparant à la colonne. Pas encore résolu (contourné en filtrant côté Rust
-après `fetch_all`) ; à reprendre précisément quand l'étape 4 (API de requête)
-aura besoin de vrais lookups paramétrés par `trace_id`.
+A second finding from the same test: binding a `[u8; 16]` (trace_id) directly to a
+`?` in a parameterised query serialises it as `Tuple(UInt8, ...)` in the driver,
+not as a `FixedString` literal, and ClickHouse answers `NO_COMMON_TYPE` when
+comparing with the column. Resolved at step 4: bind the hex string and compare
+with `unhex(?)` (see `docs/interfaces/query-api.md`).

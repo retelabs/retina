@@ -1,120 +1,112 @@
-# triage-eval-plugin — premier "eval-as-plugin" (`crates/plugin-triage-eval`)
+# triage-eval-plugin: the first "eval-as-plugin" (`crates/plugin-triage-eval`)
 
-- Source faisant autorité : code réel de the-client lu par la session the-client
-  (`TriageAgent.cs:35-46`, `Domain/Entities/Service.cs`,
-  `generate-rich-seed.py:129-134`, `seed-dev.sql:139,169,184,199`), relayé
-  avec citations exactes — pas des exemples inventés pour l'occasion.
-- Date de vérification : 2026-08-17
-- Portée : premier volet d'un chantier "évals sans LangSmith" initié par
-  l'utilisateur the-client (échange du 2026-08-17). Volet déterministe seulement
-  — le volet "jugement sémantique" (summary/compliance) reste une question
-  d'architecture ouverte, voir section dédiée plus bas.
+- Authoritative source: the first client's real code, read by the client's own
+  development session (`TriageAgent.cs:35-46`, `Domain/Entities/Service.cs`,
+  `generate-rich-seed.py:129-134`, `seed-dev.sql:139,169,184,199`) and relayed
+  with exact quotes, not examples invented for the occasion.
+- Verification date: 2026-08-17
+- Scope: the first part of an "evals without LangSmith" piece of work started by
+  the client's team (discussion of 2026-08-17). The deterministic part only; the
+  "semantic judgement" part (summary/compliance) was an open architecture
+  question, settled in its own section below.
 
-## Contexte : pourquoi ce vertical spécifique, et pas summary/compliance
+## Context: why this specific agent, and not summary/compliance
 
-3 agents the-client analysés : triage, summary, compliance. Un seul a un
-référentiel canonique réel à comparer à une sortie catégorielle — c'est ce
-qui permet une règle déterministe plutôt qu'un jugement sémantique.
+Three of the client's agents were analysed: triage, summary, compliance. Only one
+has a real canonical reference to compare a categorical output against, which is
+what allows a deterministic rule rather than a semantic judgement.
 
-- **Triage** (`TriageAgent.cs:35-46`) : le prompt demande un tag de
-  spécialité médicale en français, avec une liste **ouverte**
-  ("for example: cardiologie, pédiatrie, neurologie, biologie,
-  dermatologie, gynécologie, urgence, gériatrie, médecine générale").
-  Sortie post-traitée `.Trim().ToLowerInvariant()`. Mais le référentiel
-  **réel** que the-client utilise ailleurs (`Domain/Entities/Service.cs`) n'a que
-  6 valeurs seedées (`generate-rich-seed.py:129-134`) : `Cardiologie`,
+- **Triage** (`TriageAgent.cs:35-46`): the prompt asks for a medical specialty
+  tag in French, with an **open** list ("for example: cardiologie, pédiatrie,
+  neurologie, biologie, dermatologie, gynécologie, urgence, gériatrie, médecine
+  générale"). The output is post-processed with `.Trim().ToLowerInvariant()`.
+  But the **real** reference the client uses elsewhere (`Domain/Entities/Service.cs`)
+  has only 6 seeded values (`generate-rich-seed.py:129-134`): `Cardiologie`,
   `Pédiatrie`, `Urgences`, `Gynécologie-Obstétrique`, `Dermatologie`,
-  `Médecine générale`. **Dérive confirmée en base, pas hypothétique** :
-  `seed-dev.sql:139,169,184,199` a de vraies lignes
-  `Call.AiTriageTag = 'biologie'`/`'neurologie'` sans aucun `Service`
-  correspondant, et `urgence` (prompt, singulier) ne correspond même pas à
-  `Urgences` (Service réel, pluriel) alors que le concept existe des deux
-  côtés.
-- **Summary/Compliance** (`SummaryAgent.cs:33-42`, `ComplianceAgent.cs:32-42`) :
-  prose libre, aucun schéma structuré, aucun référentiel à comparer — un
-  résumé fidèle ou un audit RGPD correct ne se vérifient pas par une règle
-  déterministe sur des attributs. Hors scope de ce plugin.
+  `Médecine générale`. **Drift confirmed in the database, not hypothetical**:
+  `seed-dev.sql:139,169,184,199` has real rows `Call.AiTriageTag =
+  'biologie'`/`'neurologie'` with no matching `Service`, and `urgence` (prompt,
+  singular) does not even match `Urgences` (the real Service, plural) although the
+  concept exists on both sides.
+- **Summary/Compliance** (`SummaryAgent.cs:33-42`, `ComplianceAgent.cs:32-42`):
+  free prose, no structured schema, no reference to compare with. A faithful
+  summary or a correct GDPR audit cannot be checked by a deterministic rule on
+  attributes. Out of this plugin's scope.
 
-## Contrat
+## Contract
 
-**Attribut d'entrée** (posé par the-client, **pas encore émis au 2026-08-17** —
-lacune trouvée en scopant ce plugin, pas supposée) : `oncology.triage.tag`
-(`String`), la valeur déjà post-traitée (`.Trim().ToLowerInvariant()`) que
-the-client stocke aujourd'hui comme `Call.AiTriageTag` en base. Sans cet
-attribut sur le span `invoke_agent`, `TriageEvalPlugin` est un no-op — même
-posture que `MedicalPlugin` face à un span sans `oncology.current_step`.
+**Input attribute** (set by the client; **not yet emitted as of 2026-08-17**, a
+gap found while scoping this plugin, not assumed): `oncology.triage.tag`
+(`String`), the already post-processed value (`.Trim().ToLowerInvariant()`) the
+client stores today as `Call.AiTriageTag`. Without this attribute on the
+`invoke_agent` span, `TriageEvalPlugin` is a no-op, the same stance as
+`MedicalPlugin` facing a span without `oncology.current_step`.
 
-**Attribut de sortie** : `eval.triage.tag_known` (`Bool`) — nouveau
-namespace `eval.*`, distinct de `oncology.*` (donnée brute posée par le
-client) pour séparer clairement "ce que the-client a produit" de "ce que Retina
-en a déduit". Proposé par la session the-client, retenu tel quel.
+**Output attribute**: `eval.triage.tag_known` (`Bool`), a new `eval.*`
+namespace, distinct from `oncology.*` (raw data set by the client), to separate
+clearly "what the client produced" from "what Retina inferred from it". Proposed
+by the client's session and kept as is.
 
-**Comparaison** : `tag_known = true` si le tag (normalisé
-trim+lowercase, même normalisation que the-client applique déjà) correspond
-exactement à un nom de service connu (normalisé pareil). Pas de
-correspondance floue/partielle — un match approximatif masquerait
-silencieusement une vraie dérive de vocabulaire, l'inverse de ce que ce
-plugin doit détecter.
+**Comparison**: `tag_known = true` if the tag (normalised with trim + lowercase,
+the same normalisation the client already applies) exactly matches a known
+service name (normalised the same way). No fuzzy or partial match: an
+approximate match would silently hide real vocabulary drift, the opposite of what
+this plugin must detect.
 
-**Avertissement** : si `tag_known = false`, un `plugin.warning` est
-attaché — visible via `spans_with_warnings` (`query-api::/metrics/summary`),
-même mécanisme de monitoring déjà utilisé par `MedicalPlugin`.
+**Warning**: if `tag_known = false`, a `plugin.warning` is attached, visible
+through `spans_with_warnings` (`query-api::/metrics/summary`), the same
+monitoring mechanism `MedicalPlugin` already uses.
 
-## Source du référentiel canonique
+## Source of the canonical reference
 
-Décision prise avec l'utilisateur (pas seulement `MedicalPlugin`-style figé
-dans le code) : `TriageEvalPlugin::new(known_services)` prend la liste en
-paramètre plutôt que de la coder en dur. `crates/kernel/src/main.rs` la
-résout via `TRIAGE_KNOWN_SERVICES` (comma-separated, même style que
-`ENABLED_PLUGINS`) — non défini = utilise `DEFAULT_KNOWN_SERVICES` (les 6
-vraies valeurs seedées de the-client aujourd'hui), pas une liste vide (une liste
-vide ferait échouer tous les tags, pire qu'un défaut basé sur de la vraie
-donnée). Permet de suivre l'évolution du référentiel `Service` de the-client sans
-recompiler le kernel — un choix différent de `MedicalPlugin` (liste de
-champs figée), justifié parce qu'un vocabulaire métier dérive dans le temps
-alors qu'un schéma de gouvernance HIPAA/GDPR ne bouge pas au même rythme.
+Decided with the owner (not frozen in code the way `MedicalPlugin` is):
+`TriageEvalPlugin::new(known_services)` takes the list as a parameter rather than
+hard-coding it. `crates/kernel/src/main.rs` resolves it from
+`TRIAGE_KNOWN_SERVICES` (comma-separated, the same style as `ENABLED_PLUGINS`).
+Unset means `DEFAULT_KNOWN_SERVICES` (the 6 real seeded values above), not an
+empty list (an empty list would fail every tag, worse than a default based on
+real data). This follows changes to the client's `Service` reference without
+recompiling the kernel: a different choice from `MedicalPlugin` (a fixed field
+list), justified because a business vocabulary drifts over time while a
+HIPAA/GDPR governance schema does not move at the same pace.
 
-## Volet 2 (jugement sémantique summary/compliance) — tranché, pas de code côté Retina
+## Part 2 (semantic judgement of summary/compliance): settled, no code in Retina
 
-Décision prise avec l'utilisateur (2026-08-17), après une première piste
-écartée : un binaire séparé (`eval-worker`) qui irait relire les
-transcripts/sorties d'agent dans ClickHouse pour appeler un juge LLM a été
-envisagé, puis rejeté — `docs/interfaces/clickhouse-schema.md` établit déjà
-que les attributs potentiellement sensibles sont **opt-in, désactivés par
-défaut**, précisément pour ne pas stocker de donnée patient en clair dans
-Retina. Le cas réel `ComplianceAgent` (nom, date de naissance, numéro de
-sécu, statut VIH) rendrait ce risque concret, pas théorique, si le texte
-source transitait par Retina pour être jugé.
+Decided with the owner (2026-08-17), after a first idea was set aside: a separate
+binary (`eval-worker`) that would read agent transcripts and outputs back from
+ClickHouse to call an LLM judge was considered, then rejected.
+`docs/interfaces/clickhouse-schema.md` already establishes that potentially
+sensitive attributes are **opt-in, off by default**, precisely so as not to store
+patient data in clear in Retina. The real `ComplianceAgent` case (name, date of
+birth, social security number, HIV status) would make that risk concrete, not
+theoretical, if the source text went through Retina to be judged.
 
-**Décision retenue** : le juge sémantique tourne **côté client** (the-client, ou
-tout futur client), avec son propre texte, sa propre clé API, son propre
-budget — jamais transmis à Retina. Seul le **verdict structuré** est
-posté comme attribut sur le span `invoke_agent`, namespace `eval.*` (même
-que `eval.triage.tag_known` ci-dessus), valeur typée (bool/int/float),
-jamais de texte libre en sortie de verdict — cohérent avec pourquoi
-`ComplianceAgent` lui-même n'a pas de gate structuré aujourd'hui (dossier
-`oncology-governance.md`) : un verdict en prose n'est pas interrogeable,
-un verdict structuré l'est.
+**The decision**: the semantic judge runs **on the client side** (this client or
+any future one), with its own text, its own API key, its own budget, never sent to
+Retina. Only the **structured verdict** is posted as an attribute on the
+`invoke_agent` span, in the `eval.*` namespace (like `eval.triage.tag_known`
+above), with a typed value (bool/int/float), never free text as a verdict. This is
+consistent with why `ComplianceAgent` itself has no structured gate today
+(`oncology-governance.md`): a verdict in prose cannot be queried, a structured one
+can.
 
-**Conséquence** : aucun nouveau crate/table/migration/clé API côté Retina
-pour ce volet — `extra_attributes` (`Map(String, String)`, déjà générique)
-absorbe `eval.summary.*`/`eval.compliance.*` exactement comme `oncology.*`
-aujourd'hui. Généralise mieux qu'un `eval-worker` centralisé : pas de
-couplage Retina à un fournisseur LLM ou un format de texte par client,
-cohérent avec le mono-tenant actuel (ADR-0001) plutôt que d'ajouter une
-responsabilité multi-client. Convention à communiquer à chaque client qui
-veut l'utiliser, pas un contrat à faire évoluer côté kernel.
+**Consequence**: no new crate, table, migration or API key in Retina for this
+part. `extra_attributes` (`Map(String, String)`, already generic) absorbs
+`eval.summary.*`/`eval.compliance.*` exactly like `oncology.*` today. It
+generalises better than a central `eval-worker`: no coupling of Retina to an LLM
+provider or to a per-client text format, consistent with today's single-tenant
+model (ADR-0001) rather than adding a multi-client responsibility. A convention
+to share with each client that wants to use it, not a contract to evolve in the
+kernel.
 
-## Vérifié
+## Verified
 
-7 tests unitaires (`crates/plugin-triage-eval`) : tag connu (cas réel
-"pédiatrie" produit cette session) → `tag_known=true` sans warning ; tag en
-dérive déjà vu en base the-client ("biologie") → `tag_known=false` + warning ;
-`urgence` vs `Urgences` (mismatch singulier/pluriel même concept) →
-`tag_known=false` ; normalisation casse/espaces ; tag absent → no-op ;
-event non-`AgentRun` → no-op. Plus 2 tests sur `triage_known_services`
-(`crates/kernel`) : défaut = liste réelle the-client, override par env
-splitté/trimmé. **Pas encore vérifié en conditions réelles** (contrairement
-à `cost_usd`) : bloqué sur `oncology.triage.tag`, toujours pas émis par
-the-client au moment de l'écriture — prochaine étape une fois cet attribut posé
-côté client.
+7 unit tests (`crates/plugin-triage-eval`): a known tag (the real case
+"pédiatrie") → `tag_known=true` with no warning; a drifted tag already seen in the
+client's data ("biologie") → `tag_known=false` + a warning; `urgence` vs
+`Urgences` (the same concept, singular/plural mismatch) → `tag_known=false`; case
+and whitespace normalisation; tag absent → no-op; a non-`AgentRun` event → no-op.
+Plus 2 tests on `triage_known_services` (`crates/kernel`): the default is the real
+list, an environment override is split and trimmed. **Not yet verified in real
+conditions** (unlike `cost_usd`): blocked on `oncology.triage.tag`, still not
+emitted by the client at the time of writing.

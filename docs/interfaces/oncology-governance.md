@@ -1,127 +1,120 @@
-# oncology-governance — forme réelle du vertical oncologie (plugin médical)
+# oncology-governance: the real shape of the oncology vertical (medical plugin)
 
-- Source faisant autorité : the oncology pipeline repository
-  (cloné en lecture seule, pas vendoré — même traitement que
-  `docs/interfaces/fraudos-agentspan.md`), + comparaison ponctuelle avec
-  another implementation of the same vertical pour un second point de
-  référence sur le même domaine (médical). Les identifiants des démos en
-  ligne fournis par l'utilisateur n'ont pas été utilisés — le code seul a
-  suffi à ancrer les décisions ci-dessous, comme pour fraudos.
-- Date de vérification : 2026-08-15
+- Authoritative source: the oncology pipeline's own repository (a separate
+  project, cloned read-only, not vendored: the same treatment as
+  `docs/interfaces/fraudos-agentspan.md`), plus a one-off comparison with another
+  real implementation of the same (medical) domain as a second reference point.
+  The credentials of the online demos provided by the owner were not used: the
+  code alone was enough to ground the decisions below, as for fraudos.
+- Verification date: 2026-08-15
 
-## Ce que ce vertical apporte de différent de fraudos
+## What this vertical brings that fraudos does not
 
-- **Pipeline LangGraph déterministe** (7 nodes en séquence fixe), pas une
-  boucle agentique multi-tours à sélection d'outils par le LLM (Bedrock
-  Converse). Un seul vrai appel LLM dans tout le pipeline : `recommendation_node`
-  (`ChatOpenAI(model="gpt-4o")`, sortie structurée `ClinicalRecommendation`).
-  **Conséquence pour le mapping** : contrairement à `fraudos-agentspan.md`
-  (1 `AgentRunEvent` + 1 `ModelCallEvent` agrégé + N `ToolCallEvent`), ici
-  les nodes déterministes (`ingestion`, `preprocessing`, `modeling`,
-  `evaluation`, `visualization`, `monitoring`) ne sont **pas** mappés en
-  `ToolCallEvent` — ce sont des étapes de workflow, pas des outils
-  sélectionnés par un agent (`gen_ai.execute_tool.*` ne correspond pas
-  sémantiquement à ça ; `gen_ai.invoke_workflow.internal` existe dans la
-  spec pinnée mais est hors périmètre MVP, `docs/interfaces/semconv-genai.md`).
-  Reconstruction retenue : 1 `AgentRunEvent` (le run complet) + 1
-  `ModelCallEvent` (le seul vrai appel LLM, `provider=openai`,
-  `request_model=gpt-4o`) — plus simple et plus honnête que de forcer un
-  mapping qui n'existe pas dans la source.
-- **Observabilité** : LangSmith (`src/observability/langsmith_config.py`,
-  activé par variables d'env `LANGSMITH_*`, callbacks LangChain) — encore
-  une fois pas d'OTLP natif. Deuxième vertical de suite où c'est le cas ;
-  schéma qui se confirme plutôt que hypothèse isolée à fraudos.
+- **A deterministic LangGraph pipeline** (7 nodes in a fixed sequence), not a
+  multi-turn agentic loop where the LLM picks tools (Bedrock Converse). One real
+  LLM call in the whole pipeline: `recommendation_node`
+  (`ChatOpenAI(model="gpt-4o")`, structured output `ClinicalRecommendation`).
+  **Consequence for the mapping**: unlike `fraudos-agentspan.md`
+  (1 `AgentRunEvent` + 1 aggregated `ModelCallEvent` + N `ToolCallEvent`), the
+  deterministic nodes here (`ingestion`, `preprocessing`, `modeling`,
+  `evaluation`, `visualization`, `monitoring`) are **not** mapped to
+  `ToolCallEvent`: they are workflow steps, not tools chosen by an agent
+  (`gen_ai.execute_tool.*` does not match that semantically;
+  `gen_ai.invoke_workflow.internal` exists in the pinned spec but is outside the
+  MVP, `docs/interfaces/semconv-genai.md`). The reconstruction chosen:
+  1 `AgentRunEvent` (the complete run) + 1 `ModelCallEvent` (the only real LLM
+  call, `provider=openai`, `request_model=gpt-4o`), simpler and more honest than
+  forcing a mapping that does not exist in the source.
+- **Observability**: LangSmith (`src/observability/langsmith_config.py`, enabled
+  by `LANGSMITH_*` environment variables, LangChain callbacks), again with no
+  native OTLP. The second vertical in a row where this is the case: a pattern
+  confirming itself rather than an assumption specific to fraudos.
 
-## Gouvernance — deux mécanismes réels, explicites dans le code
+## Governance: two real mechanisms, explicit in the code
 
-1. **Gate de conformité déterministe** (`src/tools/oncology_tools.py::check_hipaa_compliance`)
-   — noms de colonnes suspects (`ssn`, `email`, `dob`, ...) + scan NER du
-   contenu (Microsoft Presidio) si le premier check ne trouve rien. Produit
-   `hipaa_cleared`/`gdpr_cleared` (bool) et `compliance_flags` (liste de
-   strings : `"PII_DETECTED:ssn,email"`, `"HIPAA_CLEARED"`, ...). Si l'un des
-   deux est faux, `route_after_ingestion` route vers `__end__` — le pipeline
-   **ne peut pas** atteindre modeling/LLM. Invariant explicite du repo
-   (`CLAUDE.md` de `oncology-pipeline`) : *"NEVER let the LLM be the final
-   decision-maker for a compliance/regulatory block — deterministic checks
-   only."*
-2. **Gate HITL** — `interrupt_before=["recommendation"]` (LangGraph) : le
-   graphe **pause** avant `recommendation_node`, reprend seulement sur
-   `POST /pipeline/{p}/{s}/approve` (`Depends(require_clinician)`, RBAC
-   clinician-only). `submitted_by`/`approved_by` tracent qui a soumis vs
-   approuvé. Invariant explicite : *"ALWAYS keep interrupt_before=[...] — no
-   clinical recommendation without human sign-off."* Un run peut donc
-   légitimement être observé **dans l'état intermédiaire** : `current_step`
-   encore sur `"recommendation"`, `submitted_by` renseigné,
-   `approved_by = None` — ce n'est pas un bug, c'est l'état normal d'un run
-   en attente de validation humaine. C'est un cas de fixture réaliste, pas
-   inventé.
+1. **A deterministic compliance gate**
+   (`src/tools/oncology_tools.py::check_hipaa_compliance`): suspicious column
+   names (`ssn`, `email`, `dob`, ...) plus an NER scan of the content (Microsoft
+   Presidio) if the first check finds nothing. It produces
+   `hipaa_cleared`/`gdpr_cleared` (bool) and `compliance_flags` (a list of
+   strings: `"PII_DETECTED:ssn,email"`, `"HIPAA_CLEARED"`, ...). If either is
+   false, `route_after_ingestion` routes to `__end__`: the pipeline **cannot**
+   reach modelling or the LLM. An explicit invariant of that repository: *"NEVER
+   let the LLM be the final decision-maker for a compliance/regulatory block —
+   deterministic checks only."*
+2. **A HITL gate**: `interrupt_before=["recommendation"]` (LangGraph). The graph
+   **pauses** before `recommendation_node` and resumes only on
+   `POST /pipeline/{p}/{s}/approve` (`Depends(require_clinician)`,
+   clinician-only RBAC). `submitted_by`/`approved_by` record who submitted and who
+   approved. An explicit invariant: *"ALWAYS keep interrupt_before=[...] — no
+   clinical recommendation without human sign-off."* A run can therefore
+   legitimately be observed **in the intermediate state**: `current_step` still on
+   `"recommendation"`, `submitted_by` set, `approved_by = None`. That is not a
+   bug, it is the normal state of a run waiting for human validation: a realistic
+   fixture case, not an invented one.
 
-## Trouvaille : deux implémentations réelles du même vertical divergent sur la conformité
+## Finding: two real implementations of the same vertical diverge on compliance
 
-`client-project` (`backend/src/client-project.OnCall.Infrastructure/AI/Agents/ComplianceAgent.cs`)
-fait juger la conformité RGPD **par le LLM lui-même** — un prompt libre
-demandant un rapport texte non structuré (*"Analyze the following text and
-report: 1. Any personal data (PII)... Be concise."*), pas de sortie
-structurée bool/enum, pas de check déterministe. C'est exactement ce que
-l'invariant explicite d'`oncology-pipeline` interdit. Pas une supposition :
-une divergence réelle entre deux systèmes de production du même vertical,
-trouvée en lisant les deux. Le plugin ci-dessous ne peut donc pas supposer
-qu'"une vérification de conformité a eu lieu" implique "vérification fiable" —
-seul le résultat structuré (`hipaa_cleared`/`gdpr_cleared` bool) est exploité,
-jamais un texte libre.
+The other implementation has the LLM itself judge GDPR compliance: a free-form
+prompt asking for an unstructured text report (*"Analyze the following text and
+report: 1. Any personal data (PII)... Be concise."*), no structured bool/enum
+output, no deterministic check. That is exactly what the first repository's
+explicit invariant forbids. Not an assumption: a real divergence between two
+production systems of the same vertical, found by reading both. The plugin below
+therefore cannot assume that "a compliance check took place" means "a reliable
+check": only the structured result (`hipaa_cleared`/`gdpr_cleared` bool) is used,
+never free text.
 
-## Décision de conversion retenue (`crates/oncology-replay`)
+## The conversion chosen (`crates/oncology-replay`)
 
-Mêmes réflexes que `fraudos-agentspan.md` — reconstruction best-effort, pas
-fidèle (le state LangGraph réel a bien plus de champs que ce qu'on retient) :
+The same reflexes as `fraudos-agentspan.md`: a best-effort reconstruction, not a
+faithful one (the real LangGraph state has far more fields than we keep):
 
-- `AgentRunEvent` (racine, `invocation_kind: Internal` — LangGraph tourne en
-  process, pas un agent hébergé) : `agent_name = "oncology_pipeline"`,
-  attributs `oncology.*` : `current_step`, `hipaa_cleared`, `gdpr_cleared`,
-  `compliance_flags` (joints par `;`), `submitted_by`, `approved_by`
-  (absent si `None`), `patient_id`.
-- `ModelCallEvent` (enfant, seulement si `recommendation_node` a
-  **réellement tourné** — `current_step ∈ {"monitoring", "done"}`, **pas**
-  `current_step == "recommendation"`). Point vérifié précisément dans le
-  code, pas déduit du nom : `visualization_node` retourne déjà
-  `current_step: "recommendation"` **avant** que `interrupt_before=["recommendation"]`
-  ne mette le graphe en pause — cette valeur signifie "sur le point d'appeler
-  le LLM, pas encore fait", et `recommendation_node` lui-même ne retourne
-  `current_step: "monitoring"` qu'une fois l'appel effectué. Confondre les
-  deux aurait généré un span `ModelCallEvent` pour un appel qui n'a pas eu
-  lieu. `provider_name = openai`, `request_model = "gpt-4o"`. **Pas de
-  compte de tokens** : le code (`generate_recommendations`) ne capture pas
-  la métadonnée d'usage retournée par LangChain — contrairement à
-  `AgentSpan` (fraudos) qui l'agrège explicitement. Champ laissé `None`,
-  pas inventé.
-- Pas de `ToolCallEvent` du tout pour ce vertical (voir mapping plus haut).
+- `AgentRunEvent` (root, `invocation_kind: Internal`: LangGraph runs in-process,
+  not a hosted agent): `agent_name = "oncology_pipeline"`, `oncology.*`
+  attributes: `current_step`, `hipaa_cleared`, `gdpr_cleared`,
+  `compliance_flags` (joined with `;`), `submitted_by`, `approved_by` (absent if
+  `None`), `patient_id`.
+- `ModelCallEvent` (child), only if `recommendation_node` **actually ran**:
+  `current_step ∈ {"monitoring", "done"}`, **not**
+  `current_step == "recommendation"`. Checked precisely in the code, not inferred
+  from the name: `visualization_node` already returns
+  `current_step: "recommendation"` **before** `interrupt_before=["recommendation"]`
+  pauses the graph. That value means "about to call the LLM, not done yet", and
+  `recommendation_node` itself only returns `current_step: "monitoring"` once the
+  call is made. Confusing the two would have produced a `ModelCallEvent` span for
+  a call that never happened. `provider_name = openai`,
+  `request_model = "gpt-4o"`. **No token counts**: the code
+  (`generate_recommendations`) does not capture the usage metadata LangChain
+  returns, unlike `AgentSpan` (fraudos), which aggregates it explicitly. The
+  field is left `None`, not invented.
+- No `ToolCallEvent` at all for this vertical (see the mapping above).
 
-## Plugin retenu (`crates/plugin-medical`) — règles directement issues des invariants ci-dessus
+## The plugin (`crates/plugin-medical`): rules taken directly from the invariants above
 
-1. `oncology.hipaa_cleared == false` ou `oncology.gdpr_cleared == false` **et**
-   `oncology.current_step != "failed"` → avertissement : le gate de
-   conformité rapporte un échec mais le pipeline n'a pas été stoppé — signal
-   de défense en profondeur côté observabilité (le kernel ne peut pas
-   vérifier que `route_after_ingestion` a réellement été respecté, seulement
-   que les attributs qu'il a produits sont cohérents entre eux).
-2. `oncology.current_step` ∈ `{"recommendation", "monitoring", "done"}` **et**
-   `oncology.approved_by` absent → avertissement : recommandation clinique
-   atteinte ou dépassée sans trace d'approbation HITL.
-3. Attribut dérivé `oncology.awaiting_approval = true` quand `submitted_by`
-   est présent mais `approved_by` absent (état intermédiaire légitime,
-   distinct d'une violation — pas un avertissement, juste un signal de
-   monitoring pour repérer les runs en attente).
-- No-op sur tout événement sans `oncology.current_step` (pas un run de ce
-  vertical) — même garde-fou que `FraudosPlugin`.
+1. `oncology.hipaa_cleared == false` or `oncology.gdpr_cleared == false` **and**
+   `oncology.current_step != "failed"` → a warning: the compliance gate reports a
+   failure but the pipeline was not stopped. A defence-in-depth signal on the
+   observability side (the kernel cannot check that `route_after_ingestion` was
+   really honoured, only that the attributes it produced are consistent with each
+   other).
+2. `oncology.current_step` ∈ `{"recommendation", "monitoring", "done"}` **and**
+   `oncology.approved_by` absent → a warning: a clinical recommendation reached or
+   passed with no trace of HITL approval.
+3. A derived attribute `oncology.awaiting_approval = true` when `submitted_by` is
+   present but `approved_by` absent (a legitimate intermediate state, distinct
+   from a violation: not a warning, just a monitoring signal to spot runs waiting
+   for approval).
+- A no-op on any event without `oncology.current_step` (not a run of this
+  vertical): the same safeguard as `FraudosPlugin`.
 
-## Câblage dans le pipeline — résout une question ouverte de `docs/interfaces/plugin-contract-v0.md`
+## Wiring into the pipeline: settles an open question of `docs/interfaces/plugin-contract-v0.md`
 
-`crates/plugin-sink` (`PluginSink<S: SpanSink>`) enveloppe n'importe quel
-`SpanSink` : avant de déléguer à l'intérieur, passe chaque événement
-converti à travers une liste de `Box<dyn Plugin>`, fusionne
-`PluginOutcome.attributes` dans `extra_attributes`, et convertit chaque
-avertissement en attribut `("plugin.warning", "[<nom du plugin>] <texte>")`
-— même sac générique que le reste, pas de nouvelle colonne ClickHouse.
-Choisi plutôt qu'un branchement dans `otlp-receiver` directement : garde
-`otlp-receiver` indépendant des plugins (comme documenté dès l'étape 5), et
-réutilisable avec n'importe quel `SpanSink`, pas seulement `ClickHouseSink`.
+`crates/plugin-sink` (`PluginSink<S: SpanSink>`) wraps any `SpanSink`: before
+delegating inwards, it passes every converted event through a list of
+`Box<dyn Plugin>`, merges `PluginOutcome.attributes` into `extra_attributes`, and
+turns each warning into an attribute `("plugin.warning", "[<plugin name>] <text>")`,
+the same generic bag as everything else, no new ClickHouse column. Chosen over a
+hook directly in `otlp-receiver`: it keeps `otlp-receiver` independent of plugins
+(as documented since step 5), and reusable with any `SpanSink`, not only
+`ClickHouseSink`.

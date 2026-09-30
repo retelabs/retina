@@ -1,40 +1,39 @@
-# wasm-plugin-loading — chargement dynamique de plugins via `wasmtime` (v0)
+# wasm-plugin-loading: dynamic plugin loading through `wasmtime` (v0)
 
-- Source faisant autorité : https://docs.rs/wasmtime (crate `wasmtime`, v47.0.3,
-  vérifié via docs.rs) — c'est la question ouverte du dossier section 5
-  ("modalité exacte du chargement de plugins : trait Rust compilé
-  statiquement vs modules WASM chargés dynamiquement"), qu'on explore ici
-  sans pour autant la trancher définitivement (voir plus bas).
-- Date de vérification : 2026-08-15
-- Portée : un mécanisme de chargement WASM v0, à côté du contrat trait Rust
-  déjà validé (`docs/interfaces/plugin-contract-v0.md`) — pas un remplacement.
+- Authoritative source: https://docs.rs/wasmtime (crate `wasmtime`, v47.0.3 at
+  the time, checked on docs.rs; upgraded to 49.0.1 on 2026-09-30 for RustSec
+  advisories, with no change to the API used here). This explores the open
+  question of dossier section 5 ("the exact plugin loading mode: statically
+  compiled Rust trait or dynamically loaded WASM modules") without settling it
+  for good (see below, and ADR 0004).
+- Verification date: 2026-08-15
+- Scope: a v0 WASM loading mechanism, next to the already validated Rust trait
+  contract (`docs/interfaces/plugin-contract-v0.md`), not a replacement.
 
-## Décision : module WASM "core" (ABI maison), pas le Component Model
+## Decision: a "core" WASM module (home-made ABI), not the Component Model
 
-`wasmtime` supporte deux façons de structurer une interface :
+`wasmtime` supports two ways to structure an interface:
 
-1. **Component Model** (WIT + `wit-bindgen`) — bindings typés générés,
-   approche "moderne" recommandée par le projet wasmtime pour du nouveau
-   code, mais nécessite l'outillage `cargo-component`/`wasm-tools` (build
-   d'un `.wasm` en composant, pas juste `cargo build --target
-   wasm32-unknown-unknown`). **Aucun des deux outils n'est installé dans cet
-   environnement**, et les installer ajoute une dépendance d'outillage
-   nouvelle avant même de savoir si l'approche WASM est retenue durablement.
-2. **Module "core"** — `Engine`/`Module::from_file`/`Store`/`Linker`/
-   `Instance::get_typed_func`, avec un ABI mémoire linéaire fait main
-   (passer des pointeurs + longueurs). Ne nécessite que
-   `rustup target add wasm32-unknown-unknown` — déjà dans les targets
-   installables par défaut (vérifié : `rustup target list`).
+1. **Component Model** (WIT + `wit-bindgen`): generated typed bindings, the
+   "modern" approach the wasmtime project recommends for new code, but it needs
+   the `cargo-component`/`wasm-tools` tooling (building a `.wasm` as a component,
+   not just `cargo build --target wasm32-unknown-unknown`). **Neither tool was
+   installed in this environment**, and installing them adds new tooling before
+   even knowing whether the WASM approach will be kept.
+2. **A "core" module**: `Engine`/`Module::from_file`/`Store`/`Linker`/
+   `Instance::get_typed_func`, with a hand-made linear-memory ABI (passing
+   pointers and lengths). It needs only `rustup target add
+   wasm32-unknown-unknown`, among the targets installable by default (checked:
+   `rustup target list`).
 
-**Retenu pour ce v0 : l'option 2.** Cohérent avec la mise en garde du
-dossier (section 2.4) contre le sur-design du contrat de plugin avant qu'un
-vrai vertical n'en ait besoin — on valide ici le *mécanisme* (chargement
-dynamique d'un `.wasm` sans recompiler le core), pas une interface figée à
-long terme. Si l'approche WASM est confirmée utile, migrer vers le Component
-Model plus tard est un changement d'outillage, pas de conception — les DTO
-`plugin-wasm-wire` définis ici resteraient valables.
+**Chosen for this v0: option 2.** Consistent with the dossier's warning (section
+2.4) against over-designing the plugin contract before a real vertical needs it:
+this validates the *mechanism* (loading a `.wasm` dynamically without recompiling
+the core), not a long-term interface. If the WASM approach proves useful, moving
+to the Component Model later is a tooling change, not a design change: the
+`plugin-wasm-wire` DTOs defined here would stay valid.
 
-## API `wasmtime` vérifiée (v47.0.3)
+## `wasmtime` API, verified (v47.0.3)
 
 ```rust
 let engine = Engine::default();
@@ -44,73 +43,66 @@ let linker = Linker::new(&engine);
 let instance = linker.instantiate(&mut store, &module)?;
 
 let memory = instance.get_memory(&mut store, "memory").ok_or(...)?;
-memory.data_mut(&mut store)[ptr..ptr+len].copy_from_slice(bytes); // écrire
+memory.data_mut(&mut store)[ptr..ptr+len].copy_from_slice(bytes); // write
 
 let alloc = instance.get_typed_func::<i32, i32>(&mut store, "alloc")?;
 let process = instance.get_typed_func::<(i32, i32), i64>(&mut store, "process")?;
 ```
 
-## ABI retenu (mémoire linéaire, JSON)
+## The ABI (linear memory, JSON)
 
-Le guest exporte 2 fonctions et sa mémoire linéaire :
+The guest exports two functions and its linear memory:
 
-- `alloc(len: i32) -> i32` — le guest alloue `len` octets dans SA mémoire et
-  retourne le pointeur ; l'hôte y écrit ensuite les octets d'entrée. Le
-  guest est propriétaire de l'allocation, pas l'hôte — évite d'avoir à
-  exposer un allocateur hôte au guest.
-- `process(ptr: i32, len: i32) -> i64` — le guest lit `len` octets JSON à
-  `ptr` (un `WireKernelEvent`, `crates/plugin-wasm-wire`), calcule un
-  `WirePluginOutcome`, l'écrit en JSON dans sa propre mémoire (via un second
-  `alloc`), et retourne `(ptr_sortie << 32) | len_sortie` empaqueté dans un
-  seul `i64`.
+- `alloc(len: i32) -> i32`: the guest allocates `len` bytes in ITS memory and
+  returns the pointer; the host then writes the input bytes there. The guest owns
+  the allocation, not the host, which avoids exposing a host allocator to the
+  guest.
+- `process(ptr: i32, len: i32) -> i64`: the guest reads `len` JSON bytes at
+  `ptr` (a `WireKernelEvent`, `crates/plugin-wasm-wire`), computes a
+  `WirePluginOutcome`, writes it as JSON into its own memory (through a second
+  `alloc`), and returns `(out_ptr << 32) | out_len` packed into a single `i64`.
 
-  **Essayé d'abord, écarté** : faire retourner `process` un tuple Rust
-  `(i32, i32)` via `extern "C"` pour profiter du retour multi-valeur wasm
-  nativement. Ça compile, mais `rustc` avertit explicitement `improper_ctypes_definitions`
-  — *"tuples have unspecified layout"* : le mapping tuple → valeurs de
-  retour wasm n'est pas une garantie du langage, juste un comportement
-  actuel du compilateur. Vérifié en compilant un cas isolé avant de le
-  mettre dans le contrat plutôt que de s'appuyer dessus. L'empaquetage
-  manuel dans un `i64` n'a aucune ambiguïté de layout.
+  **Tried first, set aside**: having `process` return a Rust tuple `(i32, i32)`
+  through `extern "C"` to use wasm's native multi-value return. It compiles, but
+  `rustc` explicitly warns `improper_ctypes_definitions`: *"tuples have
+  unspecified layout"*. The tuple → wasm return values mapping is not a language
+  guarantee, only current compiler behaviour. This was checked by compiling an
+  isolated case before putting it into the contract rather than relying on it.
+  Manual packing into an `i64` has no layout ambiguity.
 
-**Format des données : JSON** (`serde_json`), pas un format binaire
-compact — lisibilité et simplicité de debug priment sur la performance pour
-un v0 dont le but est de valider le mécanisme, pas de l'optimiser.
-`crates/plugin-wasm-wire` définit les types `Serialize`/`Deserialize`
-(`WireAttributeValue`, `WireKernelEvent`, `WirePluginOutcome`) séparément de
-`kernel-model` — `kernel-model` reste sans dépendance externe (voir
-CLAUDE.md étape 1), donc les types `serde` du pont WASM vivent dans leur
-propre crate, pas ajoutés à `kernel-model`.
+**Data format: JSON** (`serde_json`), not a compact binary format: readability
+and ease of debugging win over performance for a v0 whose goal is to validate the
+mechanism, not optimise it. `crates/plugin-wasm-wire` defines the
+`Serialize`/`Deserialize` types (`WireAttributeValue`, `WireKernelEvent`,
+`WirePluginOutcome`) separately from `kernel-model`: `kernel-model` stays free of
+external dependencies (see CLAUDE.md step 1), so the WASM bridge's `serde` types
+live in their own crate rather than being added to `kernel-model`.
 
-## Sécurité / robustesse — différence avec le plugin trait Rust natif
+## Safety and robustness: the difference from the native Rust trait plugin
 
-Contrairement à `plugin-example` (code interne, de confiance,
-`docs/interfaces/plugin-contract-v0.md` note explicitement que la gestion
-d'un plugin qui panique/boucle "n'est pas pertinente tant que les seuls
-plugins sont internes") : un module WASM est censé pouvoir venir d'un tiers.
-Le host wrapper (`WasmPlugin::inspect`, `crates/plugin-wasm-host`) doit donc
-absorber toute défaillance guest (trap, JSON invalide, fonctions manquantes)
-en un `PluginOutcome` vide + warning plutôt que de la propager — cohérent
-avec le contrat `PluginOutcome` déjà infaillible, mais ça déplace la
-responsabilité de "ne jamais planter" du guest (on ne lui fait pas
-confiance) vers le wrapper hôte (lui, on lui fait confiance).
+Unlike `plugin-example` (internal, trusted code;
+`docs/interfaces/plugin-contract-v0.md` explicitly notes that handling a plugin
+that panics or loops "is not relevant while the only plugins are internal"), a
+WASM module is meant to be able to come from a third party. The host wrapper
+(`WasmPlugin::inspect`, `crates/plugin-wasm-host`) must therefore absorb any
+guest failure (trap, invalid JSON, missing functions) into an empty
+`PluginOutcome` plus a warning rather than propagate it. This is consistent with
+the already infallible `PluginOutcome` contract, but it moves the responsibility
+for "never crash" from the guest (not trusted) to the host wrapper (trusted).
 
-**Limite non traitée dans ce v0** : pas de limite de temps d'exécution
-(`wasmtime` supporte le fuel metering et les épuisements de temps, mais
-c'est un mécanisme à part, pas activé ici) ni de limite mémoire au-delà des
-défauts `wasmtime`. Un guest qui boucle infiniment bloquerait l'appelant.
-À traiter si/quand des plugins tiers non fiables sont réellement envisagés
-— pas anticipé plus loin ici, conformément à la même logique de non
-sur-design.
+**A limit not handled in this v0**: no execution time limit (`wasmtime` supports
+fuel metering and epoch interruption, but that is a separate mechanism, not
+enabled here) and no memory limit beyond `wasmtime`'s defaults. A guest that
+loops forever would block the caller. The 2026-09-30 audit makes these limits a
+prerequisite before loading any third-party module (ADR 0004).
 
-## Ignoré volontairement pour ce v0
+## Deliberately ignored in this v0
 
-- Component Model / WIT (voir plus haut).
-- `wasi` (accès fichiers/réseau depuis le guest) — un plugin d'interprétation
-  n'en a pas besoin ; le guest ne voit que les octets qu'on lui passe.
-- Limites de ressources (fuel/temps/mémoire) — voir ci-dessus.
-- Cache de modules compilés entre appels — `WasmPlugin` compile le module
-  une fois à la construction (`Module::from_file`) et réutilise `Engine`,
-  mais recrée un `Store`/`Instance` à chaque appel (plus simple, pas de
-  risque de fuite mémoire guest entre appels ; le coût d'instantiation n'est
-  pas mesuré/optimisé ici).
+- Component Model / WIT (see above).
+- `wasi` (file or network access from the guest): an interpretation plugin does
+  not need it; the guest only sees the bytes it is given.
+- Resource limits (fuel, time, memory): see above.
+- Caching compiled modules across calls: `WasmPlugin` compiles the module once at
+  construction (`Module::from_file`) and reuses the `Engine`, but recreates a
+  `Store`/`Instance` on every call (simpler, with no risk of guest memory leaking
+  between calls; the instantiation cost is not measured or optimised here).

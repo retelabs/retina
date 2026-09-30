@@ -1,4 +1,5 @@
-//! Loads the real logo (`UI/assets/logos/logo_venice_v1.png`) and renders
+//! Loads the real logo (`UI/assets/logos/retina-mark-small-light-1024.png`,
+//! the simplified twelve-bar mark meant for small sizes) and renders
 //! it as density-based ASCII art (a character ramp from sparse to dense,
 //! picked per cell from the image's real sampled luminance and colored
 //! with its real sampled color) — not `ratatui-image`/half-blocks anymore.
@@ -27,7 +28,7 @@ use ratatui::layout::Size;
 use ratatui::style::{Color, Style};
 use ratatui::text::{Line, Span};
 
-const LOGO_PNG: &[u8] = include_bytes!("../../../UI/assets/logos/logo_venice_v1.png");
+const LOGO_PNG: &[u8] = include_bytes!("../../../UI/assets/logos/retina-mark-small-light-1024.png");
 
 /// Sparse to dense. A leading space matters: it's what "background" maps
 /// to before the transparency check even applies a hard cutoff, so
@@ -35,9 +36,8 @@ const LOGO_PNG: &[u8] = include_bytes!("../../../UI/assets/logos/logo_venice_v1.
 /// gently instead of showing a hard-edged dot.
 const RAMP: &[char] = &[' ', '.', ':', '-', '=', '+', '*', '#', '%', '@'];
 
-/// The source PNG has real margin around the circular badge (measured, not
-/// guessed: content spans roughly rows 97–1136 and cols 109–1143 of a
-/// 1254×1254 canvas — about 17% blank border on each side). Cropping to
+/// The source PNG has real margin around the mark (the SVG's view box keeps
+/// room for the star's spikes). Cropping to
 /// that content before sampling means the limited cell budget (see
 /// `target_size`) goes toward actual logo detail instead of blank
 /// background.

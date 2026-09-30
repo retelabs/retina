@@ -1,80 +1,82 @@
-# clickhouse-retention — rétention et évolution de schéma
+# clickhouse-retention: retention and schema evolution
 
-- Source faisant autorité : doc ClickHouse réelle sur les TTL de table
+- Authoritative source: the ClickHouse documentation on table TTLs
   (https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree),
-  vérifiée le 2026-08-15 avant d'écrire la migration — syntaxe `TTL expr
-  DELETE` à la création, `ALTER TABLE ... MODIFY TTL expr` sur une table
-  existante. Comportement de `max()` sur une table vide (`0`, pas `NULL`,
-  pour une colonne `UInt32`) vérifié empiriquement contre un vrai serveur
-  local (pas trouvé de réponse ferme dans la doc elle-même).
-- Durée de rétention (90 jours) : tranchée avec l'utilisateur — assez pour
-  investiguer un incident a posteriori sans accumuler indéfiniment.
-- Date de vérification : 2026-08-15
+  checked on 2026-08-15 before writing the migration: `TTL expr DELETE` syntax at
+  creation, `ALTER TABLE ... MODIFY TTL expr` on an existing table. The behaviour
+  of `max()` on an empty table (`0`, not `NULL`, for a `UInt32` column) was
+  verified empirically against a real local server (no firm answer found in the
+  docs themselves).
+- Retention period (90 days): decided with the owner, long enough to investigate
+  an incident after the fact without accumulating forever.
+- Verification date: 2026-08-15
 
-## Rétention : TTL sur `spans`
+## Retention: a TTL on `spans`
 
-`crates/clickhouse-sink/migrations/0002_spans_retention_ttl.sql` :
+`crates/clickhouse-sink/migrations/0002_spans_retention_ttl.sql`:
 
 ```sql
 ALTER TABLE spans
     MODIFY TTL start_time + INTERVAL 90 DAY DELETE;
 ```
 
-Peu coûteux précisément parce que `PARTITION BY toYYYYMMDD(start_time)`
-existait déjà depuis la migration 0001 (`docs/interfaces/clickhouse-schema.md`
-l'anticipait explicitement) : ClickHouse peut supprimer des partitions
-entières une fois expirées plutôt que ligne par ligne.
+Cheap precisely because `PARTITION BY toYYYYMMDD(start_time)` already existed
+since migration 0001 (`docs/interfaces/clickhouse-schema.md` anticipated it
+explicitly): ClickHouse can drop whole partitions once expired rather than
+deleting row by row.
 
-**Ce que le TTL ne garantit pas** : la suppression n'est pas synchrone à
-l'expiration — "Data with an expired TTL is removed when ClickHouse merges
-data parts" (doc officielle). Une ligne expirée peut rester visible jusqu'au
-prochain merge en arrière-plan (réglable via `merge_with_ttl_timeout`, pas
-retouché ici — comportement par défaut du serveur). `OPTIMIZE TABLE spans
-FINAL` forcerait une purge immédiate si jamais nécessaire en opération, mais
-n'est pas automatisé.
+**What the TTL does not guarantee**: deletion is not synchronous with expiry.
+"Data with an expired TTL is removed when ClickHouse merges data parts" (official
+docs). An expired row can stay visible until the next background merge
+(adjustable with `merge_with_ttl_timeout`, left at the server default here).
+`OPTIMIZE TABLE spans FINAL` would force an immediate purge if ever needed in
+operation, but it is not automated.
 
-## Évolution de schéma : `schema_migrations` + fichiers numérotés
+**Consequence found on 2026-09-30**: a span whose `start_time` is already more
+than 90 days old is expired on insert and vanishes at the next merge. Test
+fixtures dated 1970 made one integration test race that merge; fixtures now use
+recent timestamps and unique trace ids (see `scripts/test-integration.sh`).
 
-Avant cette étape, il n'existait qu'un seul fichier de migration, appliqué à
-chaque démarrage via un `CREATE TABLE IF NOT EXISTS` — idempotent par
-chance, pas par conception. Ça ne tenait plus dès qu'une deuxième migration
-(`ALTER TABLE ... MODIFY TTL`, puis potentiellement `ADD COLUMN` un jour) devait
-être appliquée exactement une fois, pas rejouée sans discernement à chaque
-démarrage.
+## Schema evolution: `schema_migrations` plus numbered files
 
-`crates/clickhouse-sink/src/migrate.rs` (`run_migrations`, exportée par le
-crate) :
-- Table `schema_migrations (version UInt32, name String, applied_at DateTime
-  DEFAULT now()) ENGINE = MergeTree ORDER BY version`, créée si absente.
-- `SELECT max(version)` (→ `0` sur une table neuve) donne la version
-  courante ; chaque migration dont la version est supérieure est appliquée
-  dans l'ordre puis enregistrée.
-- Migrations elles-mêmes définies comme une liste statique
-  `(version, name, sql)` dans `migrate.rs`, `sql` chargé via `include_str!`
-  depuis `migrations/NNNN_*.sql` — un seul endroit qui connaît l'ordre, plus
-  de duplication de `include_str!` à travers `crates/kernel` et 3 suites de
-  tests d'intégration (c'était le cas avant cette étape).
-- Un test unitaire (`migrate::tests::migrations_are_numbered_sequentially_from_one`)
-  vérifie que la liste reste `1, 2, 3, ...` sans trou ni doublon — erreur
-  d'auteur détectée avant tout déploiement, pas seulement en production.
+Before this step there was a single migration file, applied at every start
+through `CREATE TABLE IF NOT EXISTS`: idempotent by luck, not by design. That no
+longer held once a second migration (`ALTER TABLE ... MODIFY TTL`, and perhaps
+`ADD COLUMN` one day) had to be applied exactly once, not replayed blindly at
+every start.
 
-**Hypothèse mono-instance, assumée** : deux processus qui appliqueraient la
-même migration en même temps ne sont pas gérés (pas de verrou distribué) —
-cohérent avec le dossier section 4 (pas de haute disponibilité au MVP). Il
-n'existe qu'un seul processus kernel aujourd'hui.
+`crates/clickhouse-sink/src/migrate.rs` (`run_migrations`, exported by the
+crate):
+- A `schema_migrations (version UInt32, name String, applied_at DateTime
+  DEFAULT now()) ENGINE = MergeTree ORDER BY version` table, created if missing.
+- `SELECT max(version)` (→ `0` on a new table) gives the current version; every
+  migration with a higher version is applied in order, then recorded.
+- The migrations themselves are a static `(version, name, sql)` list in
+  `migrate.rs`, with `sql` loaded through `include_str!` from
+  `migrations/NNNN_*.sql`: one place knows the order, and `include_str!` is no
+  longer duplicated across `crates/kernel` and three integration test suites (as
+  it was before this step).
+- A unit test (`migrate::tests::migrations_are_numbered_sequentially_from_one`)
+  checks that the list stays `1, 2, 3, ...` with no gap or duplicate: an
+  author's mistake caught before any deployment, not only in production.
 
-## Vérifié comment
+**Single-instance assumption, accepted**: two processes applying the same
+migration at the same time are not handled (no distributed lock), consistent
+with the design dossier section 4 (no high availability in the MVP). Only one
+kernel process exists today.
 
-Contre un vrai ClickHouse local (`scripts/dev-clickhouse.sh up`), pas
-seulement en lisant la doc :
-- `SELECT max(version) FROM <table vide>` → confirmé `0`, pas `NULL`.
-- Base entièrement fraîche (`spans`/`schema_migrations` supprimées) :
-  `cargo test --workspace -- --ignored` au vert, les deux migrations
-  appliquées et enregistrées (`schema_migrations` contient les versions 1
-  et 2), `system.tables.engine_full` confirme
-  `TTL start_time + toIntervalDay(90)` sur `spans`.
-- **Scénario de mise à niveau réel** : `spans` recréée sans TTL et
-  `schema_migrations` supprimée (simule un déploiement antérieur à cette
-  fonctionnalité), puis `cargo run -p kernel` réellement lancé contre cette
-  base — la migration 2 s'applique automatiquement au démarrage sans
-  intervention manuelle, `system.tables` confirme le TTL présent après coup.
+## How it was verified
+
+Against a real local ClickHouse (`scripts/dev-clickhouse.sh up`), not only by
+reading the docs:
+- `SELECT max(version) FROM <empty table>` → confirmed `0`, not `NULL`.
+- A completely fresh database (`spans`/`schema_migrations` dropped):
+  `cargo test --workspace -- --ignored` green, both migrations applied and
+  recorded (`schema_migrations` holds versions 1 and 2), and
+  `system.tables.engine_full` confirms `TTL start_time + toIntervalDay(90)` on
+  `spans`.
+- **A real upgrade scenario**: `spans` recreated without a TTL and
+  `schema_migrations` dropped (simulating a deployment older than this feature),
+  then `cargo run -p kernel` actually started against that database. Migration 2
+  applies automatically at startup with no manual step, and `system.tables`
+  confirms the TTL afterwards.

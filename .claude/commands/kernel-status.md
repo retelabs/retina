@@ -3,7 +3,7 @@ description: Avancement du kernel MVP par rapport aux 7 étapes du dossier de co
 ---
 
 Compare l'état actuel du repo (fichiers, code, tests, fiches de contrat) aux
-7 étapes de la section 2.2 de `dossier-observabilite-agentique.md` :
+7 étapes de la section 2.2 de `design-dossier.md` :
 
 1. Modèle de données verrouillé
 2. Ingestion OTLP minimale

@@ -20,10 +20,10 @@ use crate::{CacheAccounting, ModelPricing};
 /// `gen_ai.response.model`, pricing). Matching is exact-string — no prefix
 /// or fuzzy matching, since a wrong match would silently misprice a span.
 ///
-/// **Known gap, not yet closed**: no real the-client/OpenAI/Anthropic telemetry
+/// **Known gap, not yet closed**: no real client/OpenAI/Anthropic telemetry
 /// existed to confirm which exact string (alias like `"gpt-4o"` vs a
 /// dated snapshot like `"gpt-4o-2024-08-06"`) actually lands in
-/// `request_model`/`response_model` in practice — the-client doesn't populate
+/// `request_model`/`response_model` in practice — the first client doesn't populate
 /// these fields at all yet (see the conversation that led to this crate).
 /// Verify against real captured spans before trusting this table's
 /// coverage, not just its per-token numbers.
@@ -194,7 +194,7 @@ pub const PRICE_TABLE: &[(&str, &str, ModelPricing)] = &[
     ),
     // Not re-verified this session — well-known public model ids from
     // Anthropic's release history (stable, unlikely to have changed), kept
-    // because the-client's actual deployment may well predate the Claude 5
+    // because the first client's actual deployment may well predate the Claude 5
     // family. Spot-check against a real Anthropic API response before
     // relying on the id string matching, per the gap noted above the table.
     (

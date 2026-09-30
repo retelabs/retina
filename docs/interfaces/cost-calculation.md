@@ -1,111 +1,101 @@
-# cost-calculation — calcul du coût $ par span (`crates/pricing`)
+# cost-calculation: the $ cost per span (`crates/pricing`)
 
-- Sources faisant autorité :
-  - comportement des champs `gen_ai.usage.*` par fournisseur :
-    `docs/interfaces/semconv-genai.md` (déjà vérifié à l'étape 1 du kernel)
-  - prix OpenAI : https://developers.openai.com/api/docs/pricing
-    (`platform.openai.com/docs/pricing` redirige dessus), récupéré le
-    2026-08-17
-  - prix Anthropic : https://platform.claude.com/docs/en/about-claude/pricing,
-    récupéré le 2026-08-17
-  - modèles Anthropic `claude-sonnet-5`/`claude-opus-5`/`claude-fable-5`/
-    `claude-haiku-4-5-20251001` : identifiants exacts issus du contexte
-    système de cette session (aussi fiable qu'une doc officielle — cette
-    session tourne elle-même sur un modèle Claude)
-- Date de vérification : 2026-08-17
-- Portée : `crates/pricing`, appelé une seule fois à l'ingestion depuis
-  `crates/clickhouse-sink/src/row.rs`, stocké dans `spans.cost_usd`
-  (migration `0003_add_cost_usd.sql`).
+- Authoritative sources:
+  - behaviour of the `gen_ai.usage.*` fields per provider:
+    `docs/interfaces/semconv-genai.md` (already verified at kernel step 1)
+  - OpenAI prices: https://developers.openai.com/api/docs/pricing
+    (`platform.openai.com/docs/pricing` redirects there), fetched on 2026-08-17
+  - Anthropic prices: https://platform.claude.com/docs/en/about-claude/pricing,
+    fetched on 2026-08-17
+  - Anthropic models `claude-sonnet-5`/`claude-opus-5`/`claude-fable-5`/
+    `claude-haiku-4-5-20251001`: exact identifiers taken from the system context
+    of the development session (itself running on a Claude model)
+- Verification date: 2026-08-17
+- Scope: `crates/pricing`, called once at ingestion from
+  `crates/clickhouse-sink/src/row.rs`, stored in `spans.cost_usd` (migration
+  `0003_add_cost_usd.sql`).
 
-## Décisions de scope, prises avec l'utilisateur
+## Scope decisions, made with the owner
 
-Trois questions posées avant de coder (voir échange du 2026-08-17) :
+Three questions asked before coding (discussion of 2026-08-17):
 
-1. **Où vit la table de prix ?** Statique, versionnée dans ce repo
-   (`crates/pricing/src/table.rs`) — pas fournie par le client à
-   l'ingestion. Cohérent avec ADR-0001 (mono-tenant) : un seul client réel
-   (the-client) aujourd'hui, pas de besoin démontré de prix par tenant.
-2. **Calcul à l'ingestion ou à la requête ?** À l'ingestion. Le coût est
-   figé au prix en vigueur au moment de l'insert.
-3. **Changements de prix dans le temps ?** Un changement de tarif = un
-   commit dans `table.rs`, jamais un recalcul rétroactif — les spans déjà
-   ingérés gardent le coût calculé avec le prix qui était réellement en
-   vigueur à ce moment-là. Revers assumé : un span ingéré avant l'ajout
-   d'un modèle à la table reste `cost_usd = NULL` pour toujours, pas de
-   rattrapage automatique.
+1. **Where does the price table live?** Static, versioned in this repository
+   (`crates/pricing/src/table.rs`), not supplied by the client at ingestion.
+   Consistent with ADR-0001 (single-tenant): one real client today, no
+   demonstrated need for per-tenant prices.
+2. **Computed at ingestion or at query time?** At ingestion. The cost is frozen
+   at the price in force when the row is inserted.
+3. **Price changes over time?** A price change is a commit to `table.rs`, never a
+   retroactive recomputation: spans already ingested keep the cost computed with
+   the price actually in force at the time. The accepted downside: a span
+   ingested before a model was added to the table stays `cost_usd = NULL`
+   forever, with no automatic back-fill.
 
-## Trouvaille structurante : la comptabilité des tokens de cache diffère par fournisseur
+## A structural finding: cache-token accounting differs by provider
 
-`docs/interfaces/semconv-genai.md` (§33, déjà documenté avant ce chantier)
-notait : *"le comptage des tokens diffère par provider — ex. Anthropic
-exclut les tokens cache de `input_tokens` (il faut les rajouter),
-OpenAI/Azure les incluent déjà."* Une seule formule de coût universelle
-aurait été fausse pour l'un des deux fournisseurs — vérifié avant d'écrire
-`estimate_cost_usd`, pas découvert après coup en comparant à une facture
-réelle.
+`docs/interfaces/semconv-genai.md` (documented before this work) noted: *"token
+counting differs by provider: e.g. Anthropic excludes cache tokens from
+`input_tokens` (they must be added back), OpenAI/Azure already include them."*
+A single universal cost formula would have been wrong for one of the two
+providers. This was checked before writing `estimate_cost_usd`, not discovered
+later by comparing with a real invoice.
 
-`CacheAccounting` (`crates/pricing/src/lib.rs`) encode cette différence :
+`CacheAccounting` (`crates/pricing/src/lib.rs`) encodes the difference:
 
-- **`IncludedInInput`** (OpenAI, Azure OpenAI) : `input_tokens` contient déjà
-  les tokens de cache-read. Coût = `(input_tokens - cache_read_tokens)` au
-  tarif normal + `cache_read_tokens` au tarif cache + `output_tokens`.
-- **`AdditionalToInput`** (Anthropic) : `input_tokens` exclut les tokens de
-  cache. Coût = `input_tokens` au tarif normal + `cache_read_tokens` +
-  `cache_creation_tokens` (write), chacun à son tarif propre, + `output_tokens`.
+- **`IncludedInInput`** (OpenAI, Azure OpenAI): `input_tokens` already contains
+  the cache-read tokens. Cost = `(input_tokens - cache_read_tokens)` at the
+  normal rate + `cache_read_tokens` at the cache rate + `output_tokens`.
+- **`AdditionalToInput`** (Anthropic): `input_tokens` excludes cache tokens.
+  Cost = `input_tokens` at the normal rate + `cache_read_tokens` +
+  `cache_creation_tokens` (writes), each at its own rate, + `output_tokens`.
 
-Approximation documentée, pas un guess silencieux : Anthropic facture les
-écritures de cache différemment selon leur TTL (5 minutes vs 1 heure), mais
-`ModelCallEvent`/`AgentRunEvent` ne portent aucun champ pour distinguer
-lequel a été utilisé. `crates/pricing` utilise systématiquement le tarif
-5 minutes (le comportement par défaut du cache prompt Anthropic).
+A documented approximation, not a silent guess: Anthropic bills cache writes
+differently depending on their TTL (5 minutes vs 1 hour), but
+`ModelCallEvent`/`AgentRunEvent` carry no field to tell which one was used.
+`crates/pricing` always uses the 5-minute rate (Anthropic's default prompt-cache
+behaviour).
 
-## Quel identifiant de modèle est utilisé pour le lookup de prix
+## Which model identifier is used for the price lookup
 
-`response_model` en priorité, `request_model` en repli
-(`ModelCallEvent` a les deux ; `AgentRunEvent` n'a que `request_model`) —
-c'est le modèle qui a réellement servi la requête, donc celui dont le tarif
-s'applique. Lookup par correspondance **exacte de chaîne**, pas de
-préfixe/fuzzy matching — un mauvais match tarifierait silencieusement un
-span au mauvais prix, pire qu'un span non tarifié.
+`response_model` first, `request_model` as a fallback (`ModelCallEvent` has both;
+`AgentRunEvent` only has `request_model`): the model that actually served the
+request is the one whose price applies. The lookup is an **exact string match**,
+no prefix or fuzzy matching: a wrong match would silently price a span at the
+wrong rate, worse than an unpriced span.
 
-## Lacune connue, pas encore comblée
+## Known gap, not yet closed
 
-**Aucune télémétrie réelle n'existait pour confirmer le format exact des
-chaînes `request_model`/`response_model`** envoyées en pratique — the-client ne
-peuple aujourd'hui aucun de ces deux champs (constat qui a lancé ce
-chantier). Un alias (`"gpt-4o"`) et un instantané daté
-(`"gpt-4o-2024-08-06"`) sont deux chaînes différentes pour le lookup exact
-de `crates/pricing` ; laquelle un SDK réel envoie n'a pas été vérifié
-contre une vraie réponse d'API. À vérifier dès que the-client (ou tout autre
-client) peuple ces champs pour de vrai, avant de faire confiance à la
-couverture de la table au-delà de ses nombres par token.
+**No real telemetry existed to confirm the exact format of the
+`request_model`/`response_model` strings** sent in practice: the first client set
+neither field at the time (the finding that started this work). An alias
+(`"gpt-4o"`) and a dated snapshot (`"gpt-4o-2024-08-06"`) are two different
+strings for `crates/pricing`'s exact lookup; which one a real SDK sends has not
+been checked against a real API response. Check it as soon as a client sets these
+fields for real, before trusting the table's coverage beyond its per-token
+numbers.
 
-## Fournisseurs non tarifés, délibérément
+## Providers deliberately left unpriced
 
-Groq (demandé explicitement par l'utilisateur) : la page officielle
-(`groq.com/pricing`) n'a renvoyé aucun tableau de prix exploitable, et
-`console.groq.com/docs/pricing` a renvoyé `404` — vérifié le 2026-08-17.
-Seuls des agrégateurs tiers avaient des chiffres, écartés pour la même
-raison que la divergence Hetzner déjà rencontrée dans `docs/cost-model.md`
-(chiffres non fiables/contradictoires). AWS Bedrock, IBM watsonx, GCP
-Vertex/Gemini, Azure AI, Cohere, Perplexity, xAI, DeepSeek, Mistral,
-Moonshot : non tarifés non plus, aucun n'a été demandé explicitement et
-aucun n'a été vérifié cette session. Un span de l'un de ces fournisseurs
-reste `cost_usd = NULL` — pas une erreur, juste "pas encore tarifé".
-Ajouter un fournisseur : vérifier sa vraie page de prix officielle avant
-d'ajouter une entrée à `table.rs`, jamais depuis la mémoire (règle
-permanente du projet, CLAUDE.md).
+Groq (asked for explicitly by the owner): the official page (`groq.com/pricing`)
+returned no usable price table, and `console.groq.com/docs/pricing` returned
+`404`, checked on 2026-08-17. Only third-party aggregators had figures, set aside
+for the same reason as the Hetzner discrepancy already met in `docs/cost-model.md`
+(unreliable, contradictory figures). AWS Bedrock, IBM watsonx, GCP
+Vertex/Gemini, Azure AI, Cohere, Perplexity, xAI, DeepSeek, Mistral, Moonshot:
+unpriced too; none was asked for explicitly and none was verified in that
+session. A span from one of these providers stays `cost_usd = NULL`: not an
+error, just "not priced yet". To add a provider: check its real official price
+page before adding an entry to `table.rs`, never from memory (the project's
+standing rule, CLAUDE.md).
 
-## `spans.cost_usd` — comportement d'agrégation vérifié
+## `spans.cost_usd`: aggregation behaviour, verified
 
-`cost_usd` est `Nullable(Float64)`. Vérifié contre un vrai ClickHouse
-(2026-08-17, pas supposé) : `sum(cost_usd)` renvoie `NULL` à la fois sur un
-groupe vide et sur un groupe où toutes les valeurs sont `NULL` — différent
-du comportement de `max()` sur une colonne non-nullable déjà documenté dans
-`docs/interfaces/clickhouse-retention.md` (`0`, pas `NULL`, sur une table
-vide). `query-api::MetricsSummaryDto.by_kind[].total_cost_usd` est donc
-`Option<f64>`, délibérément **pas** ramené à `0.0` comme le sont
-`total_input_tokens`/`total_output_tokens` — un total à `0.0` laisserait
-croire à un coût réellement nul plutôt qu'à "aucun span tarifé dans ce
-groupe", deux situations différentes que l'agrégat doit pouvoir
-distinguer.
+`cost_usd` is `Nullable(Float64)`. Verified against a real ClickHouse
+(2026-08-17, not assumed): `sum(cost_usd)` returns `NULL` both on an empty group
+and on a group where every value is `NULL`, unlike `max()` on a non-nullable
+column, already documented in `docs/interfaces/clickhouse-retention.md` (`0`, not
+`NULL`, on an empty table). `query-api::MetricsSummaryDto.by_kind[].total_cost_usd`
+is therefore `Option<f64>`, deliberately **not** turned into `0.0` the way
+`total_input_tokens`/`total_output_tokens` are: a `0.0` total would suggest a real
+cost of zero rather than "no priced span in this group", two different situations
+the aggregate has to tell apart.

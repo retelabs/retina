@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Épingle vendor/semconv-genai sur un commit/tag exact de
 # open-telemetry/semantic-conventions-genai. Ne jamais suivre main en continu
-# (dossier-observabilite-agentique.md, section 2.1) : ces conventions sont en
+# (design-dossier.md, section 2.1) : ces conventions sont en
 # statut Development et changent sous nos pieds sinon.
 #
 # Usage : scripts/pin-semconv.sh <tag-ou-commit>

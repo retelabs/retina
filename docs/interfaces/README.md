@@ -1,42 +1,48 @@
-# Fiches de contrat d'interface
+# Interface contract sheets
 
-Chaque frontière externe ou inter-composant du kernel a une fiche ici,
-écrite **après lecture de la doc réelle** (pas de mémoire, pas de
-supposition) et **avant** d'écrire le code qui l'implémente. C'est
-l'application concrète de la règle permanente du projet (voir
+Every external or inter-component boundary of the kernel has a sheet here,
+written **after reading the real documentation** (not from memory, not by
+assumption) and **before** writing the code that implements it. This is the
+concrete application of the project's standing rule (see
 [CLAUDE.md](../../CLAUDE.md)).
 
-Utilise `/contract <sujet>` pour produire une fiche.
+Use `/contract <topic>` to produce a sheet.
 
-## Format d'une fiche
+## Sheet format
 
 ```markdown
-# <sujet>
+# <topic>
 
-- Source faisant autorité : <repo/spec/doc, avec URL>
-- Version/commit pinné : <ref exacte, ou "N/A" si spec non versionnée>
-- Date de vérification : <YYYY-MM-DD>
+- Authoritative source: <repo/spec/doc, with URL>
+- Pinned version/commit: <exact ref, or "N/A" if the spec is not versioned>
+- Verification date: <YYYY-MM-DD>
 
-## Champs/comportements utilisés par le kernel
+## Fields/behaviours used by the kernel
 
-<liste précise : nom exact, type, obligatoire/optionnel, valeur par défaut>
+<precise list: exact name, type, required/optional, default value>
 
-## Ignoré volontairement (et pourquoi)
+## Deliberately ignored (and why)
 
-## Incertitudes restantes / à revalider avant prod
+## Remaining uncertainties / to re-validate before production
 ```
 
-## Sujets attendus (au fil de l'avancement du kernel MVP)
+## Sheets
 
-- `otlp-ingestion.md` — format des requêtes gRPC/HTTP acceptées par le
-  receiver (étape 2 du kernel).
-- `semconv-genai.md` — attributs `gen_ai.*` retenus pour le MVP (étape 1).
-- `bedrock-adot-export.md` — attributs spécifiques Bedrock émis par ADOT,
-  et configuration de repointage de l'exporteur OTLP (section 3 du dossier).
-- `clickhouse-schema.md` — schéma de stockage et garanties d'écriture
-  (étape 3).
-- `wasm-plugin-trait-v0.md` — contrat du trait de plugin, Rust natif et/ou
-  ABI WASM `wasmtime` (étape 5).
+| Sheet | Boundary |
+|---|---|
+| [`otlp-ingestion.md`](otlp-ingestion.md) | gRPC requests accepted by the receiver |
+| [`semconv-genai.md`](semconv-genai.md) | `gen_ai.*` attributes kept for the MVP |
+| [`fraudos-agentspan.md`](fraudos-agentspan.md) | The fraudos AgentSpan format and its replay |
+| [`clickhouse-schema.md`](clickhouse-schema.md) | Storage schema and write guarantees |
+| [`clickhouse-retention.md`](clickhouse-retention.md) | Retention TTL and schema migrations |
+| [`query-api.md`](query-api.md) | The HTTP query API |
+| [`kernel-auth.md`](kernel-auth.md) | Bearer-token authentication on every surface |
+| [`plugin-contract-v0.md`](plugin-contract-v0.md) | The native plugin trait |
+| [`oncology-governance.md`](oncology-governance.md) | The medical governance plugin's rules |
+| [`triage-eval-plugin.md`](triage-eval-plugin.md) | The triage evaluation plugin |
+| [`wasm-plugin-loading.md`](wasm-plugin-loading.md) | The WASM plugin host (exploration, not wired in) |
+| [`cost-calculation.md`](cost-calculation.md) | Per-span cost from a static price table |
+| [`docker-engine-api.md`](docker-engine-api.md) | The Docker Engine API used by the orchestrator |
+| [`caddy-reverse-proxy.md`](caddy-reverse-proxy.md) | Caddy as the TLS front |
 
-Cette liste n'est pas figée : ajoute une fiche pour toute autre frontière
-rencontrée en cours de route.
+The list is not fixed: add a sheet for any other boundary met along the way.

@@ -3,9 +3,9 @@
 # kernel/query-api ne publient plus de port sur l'hôte — Caddy est la seule
 # porte d'entrée publique (ports 80/443). Secrets réels via un fichier .env
 # non commité (voir docker/.env.prod.example), même posture que
-# CLICKHOUSE_PASSWORD/POSTGRES_PASSWORD ailleurs dans ce repo/the-client.
+# CLICKHOUSE_PASSWORD/POSTGRES_PASSWORD ailleurs dans ce repo.
 #
-# Segmentation réseau — 3 zones, même schéma que client-project
+# Segmentation réseau — 3 zones, même schéma qu'un projet client existant
 # (fn-edge/fn-app/fn-data) plutôt qu'un unique réseau bridge implicite :
 #
 #   retina-edge │ Caddy seul — seule zone atteignable depuis l'extérieur

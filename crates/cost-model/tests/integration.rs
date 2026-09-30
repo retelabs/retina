@@ -1,6 +1,7 @@
 //! Runs against the real local ClickHouse. Not run by default `cargo
-//! test` — requires data already in the `spans` table (rejoue au moins un
-//! fixture réel avant, `fraudos-replay`/`oncology-replay`) :
+//! test` — requires data already in the `spans` table (replay at least one
+//! real fixture first, `fraudos-replay`/`oncology-replay`), or run
+//! `scripts/test-integration.sh`:
 //!
 //!   scripts/dev-clickhouse.sh up
 //!   cargo run -p fraudos-replay -- crates/fraudos-replay/fixtures/fraud_investigator_confirmed.json

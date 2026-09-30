@@ -1,11 +1,11 @@
-//! Mesure les octets/span réels contre un vrai ClickHouse — pas une
-//! estimation analytique depuis les types de colonnes
-//! (`docs/interfaces/clickhouse-schema.md`), qui ignorerait la compression
-//! réelle (`LowCardinality`, compression de colonne) et surestimerait
-//! largement. `system.parts` donne la taille compressée réellement sur
-//! disque — vérifié en lisant `DESCRIBE TABLE system.parts` contre un vrai
-//! serveur avant d'écrire cette requête (`rows`, `data_compressed_bytes`,
-//! `database`, `table`, `active` confirmés là, pas devinés).
+//! Measures the real bytes per span against a real ClickHouse, not an
+//! analytic estimate from the column types
+//! (`docs/interfaces/clickhouse-schema.md`), which would ignore the real
+//! compression (`LowCardinality`, column compression) and overestimate by
+//! far. `system.parts` gives the compressed size actually on disk; checked
+//! by reading `DESCRIBE TABLE system.parts` against a real server before
+//! writing this query (`rows`, `data_compressed_bytes`, `database`,
+//! `table`, `active` confirmed there, not guessed).
 
 use clickhouse::Client;
 use clickhouse::Row;
@@ -17,8 +17,8 @@ struct PartsAggregate {
     compressed_bytes: u64,
 }
 
-/// `None` si la table n'a aucune ligne (rien à mesurer) plutôt qu'une
-/// division par zéro déguisée en `0.0` trompeur.
+/// `None` when the table has no row (nothing to measure) rather than a
+/// division by zero disguised as a misleading `0.0`.
 pub async fn measure_bytes_per_span(
     client: &Client,
     database: &str,

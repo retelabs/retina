@@ -23,9 +23,9 @@ fn repo_root() -> PathBuf {
 }
 
 fn clickhouse_service() -> ManagedService {
-    // Même image/variables d'env/healthcheck que docker/docker-compose.stack.yml
-    // — le control plane doit reproduire ce que compose fait, pas inventer
-    // sa propre définition du service.
+    // Same image, environment and healthcheck as docker/docker-compose.stack.yml:
+    // the control plane must reproduce what compose does, not invent its own
+    // definition of the service.
     ManagedService {
         name: CLICKHOUSE_NAME.to_string(),
         image: "clickhouse/clickhouse-server:26.8.15.10".to_string(),

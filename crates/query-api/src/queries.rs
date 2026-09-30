@@ -16,7 +16,7 @@ struct TraceSummaryRow {
     trace_end: i64,
 }
 
-/// "Lister les traces récentes" (dossier étape 4). There is no `traces`
+/// "List recent traces" (dossier step 4). There is no `traces`
 /// table — a trace is derived on the fly by grouping `spans` by `trace_id`.
 pub async fn list_recent_traces(
     client: &Client,
@@ -42,12 +42,12 @@ pub async fn list_recent_traces(
         .collect())
 }
 
-/// "Récupérer l'arbre d'une trace" (dossier étape 4) — returns a flat list
+/// "Fetch a trace's tree" (dossier step 4) — returns a flat list
 /// ordered by `start_time`, not a nested JSON tree. Each span already
 /// carries `parent_span_id`, which is enough to reconstruct the tree
 /// client-side; building and validating an actual nested structure
 /// server-side (multiple roots, orphaned parents, cycles from malformed
-/// input) is more than "pas de dashboard riche" calls for at the MVP.
+/// input) is more than "no rich dashboard" calls for at the MVP.
 ///
 /// Binds the hex string and lets ClickHouse's `unhex()` do the decoding,
 /// rather than binding `[u8; 16]` directly — binding a fixed-size array hits
@@ -74,7 +74,7 @@ struct KindMetricsRow {
     total_cost_usd: Option<f64>,
 }
 
-/// "Agréger quelques métriques de base" (dossier étape 4) — span counts and
+/// "Aggregate a few basic metrics" (dossier step 4) — span counts and
 /// token totals per event kind. Deliberately not parameterized by time
 /// range yet: no retention policy exists to bound the scan (dossier section
 /// 4), so a time filter would be cosmetic rather than load-bearing at the

@@ -6,8 +6,8 @@
 //! a cycle (`clickhouse-sink` already depends on `otlp-receiver` for
 //! `ConvertedEvent`/`SpanSink`), so this is where "the kernel" becomes a
 //! process you can run, rather than a library you can only unit-test — the
-//! thing dossier étape 7 needs ("faire tourner le kernel contre un vrai flux
-//! de télémétrie").
+//! thing dossier step 7 needs ("run the kernel against a real telemetry
+//! flow").
 //!
 //! `PluginSink` wraps `ClickHouseSink`: this is the first time any plugin
 //! actually runs as part of ingestion, not just in isolated crate tests —

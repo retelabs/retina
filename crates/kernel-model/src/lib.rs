@@ -1,5 +1,5 @@
 //! Internal data model for the observability kernel (dossier section 2.1,
-//! étape 1). Types here are derived directly from the pinned contracts in
+//! step 1). Types here are derived directly from the pinned contracts in
 //! docs/interfaces/semconv-genai.md and docs/interfaces/otlp-ingestion.md —
 //! see those files for the source material and reasoning behind each choice.
 

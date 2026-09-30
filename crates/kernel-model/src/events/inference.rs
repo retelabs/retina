@@ -4,7 +4,7 @@ use crate::provider::ProviderName;
 use crate::value::TokenCount;
 
 /// `gen_ai.inference.client` span (vendor/semconv-genai @ 30182acd,
-/// `model/gen-ai/spans.yaml`) — the "appel modèle" event (dossier section 2.1).
+/// `model/gen-ai/spans.yaml`) — the "model call" event (dossier section 2.1).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModelCallEvent {
     pub span: SpanContext,
@@ -33,7 +33,7 @@ pub struct ModelCallEvent {
     pub conversation_id: Option<String>,
 
     /// Fine-grained request params (top_p, temperature, seed, stream, ...) are
-    /// deliberately NOT first-class fields for the MVP — see "Ignoré
+    /// deliberately NOT first-class fields for the MVP — see "Deliberately
     /// volontairement" in docs/interfaces/semconv-genai.md. They live here if
     /// captured.
     pub extra_attributes: ExtraAttributes,

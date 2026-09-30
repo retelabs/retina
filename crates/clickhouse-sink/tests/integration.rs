@@ -106,7 +106,7 @@ async fn insert_and_read_back_a_model_call_span() {
     // work with this driver version (it serializes as a Tuple, producing a
     // ClickHouse NO_COMMON_TYPE error) — filtering client-side sidesteps
     // that rather than guessing the right bind incantation. Worth
-    // revisiting once the API layer (étape 4) needs parameterized lookups.
+    // revisiting once the API layer (step 4) needs parameterized lookups.
     let rows: Vec<SpanRow> = client
         .query("SELECT ?fields FROM spans")
         .fetch_all()

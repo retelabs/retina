@@ -1,31 +1,30 @@
-//! Modèle de coût réel (dossier section 5, critère précisé avec
-//! l'utilisateur le 2026-08-15 : comparer par le **coût à usage zéro**, pas
-//! seulement à volume attendu). Deuxième chantier "apprentissage cloud",
-//! après `crates/orchestrator` — même esprit : chiffrer nous-mêmes, à
-//! partir d'entrées mesurées (`src/measure.rs`, contre un vrai ClickHouse)
-//! ou vérifiées contre des sources réelles (`src/pricing.rs`), pas
-//! inventées.
+//! A real cost model (design dossier section 5, criterion refined with the
+//! owner on 2026-08-15: compare by **cost at zero usage**, not only at the
+//! expected volume). The second "cloud learning" piece of work, after
+//! `crates/orchestrator`, in the same spirit: cost things ourselves, from
+//! inputs that are measured (`src/measure.rs`, against a real ClickHouse) or
+//! checked against real sources (`src/pricing.rs`), not invented.
 //!
-//! Compare deux options qui partagent le même cœur (VM + `orchestrator` +
-//! ClickHouse/kernel/query-api, voir l'artefact "Venice Deployment") :
-//! "100% perso" (rien d'autre) et "hybride" (+ stockage objet pour les
-//! backups, le seul des 3 ajouts hybrides dont le coût dépend du volume —
-//! le registre de conteneurs et le CDN sont déjà à 0€ à tout volume
-//! réaliste pour ce projet, voir `docs/cost-model.md`).
+//! Compares two options that share the same core (VM + `orchestrator` +
+//! ClickHouse/kernel/query-api, see the "Venice Deployment" artefact):
+//! "all self-built" (nothing else) and "hybrid" (+ object storage for
+//! backups, the only one of the three hybrid additions whose cost depends on
+//! volume; the container registry and the CDN are already at €0 at any
+//! realistic volume for this project, see `docs/cost-model.md`).
 //!
-//! Usage : `cargo run -p cost-model [-- --volume=N] [--bytes-per-span=N]`
-//!   --volume=N            n'affiche qu'un seul volume (spans/jour) au
-//!                         lieu des repères par défaut (0, 1k, 100k, 1M/j).
-//!   --bytes-per-span=N    saute la mesure ClickHouse réelle, utilise cette
-//!                         valeur — utile sans instance locale en marche.
+//! Usage: `cargo run -p cost-model [-- --volume=N] [--bytes-per-span=N]`
+//!   --volume=N            print a single volume (spans a day) instead of the
+//!                         default reference points (0, 1k, 100k, 1M a day).
+//!   --bytes-per-span=N    skip the real ClickHouse measurement and use this
+//!                         value, useful without a local instance running.
 
 use clickhouse::Client;
 use cost_model::measure::measure_bytes_per_span;
 use cost_model::pricing::{BACKBLAZE_B2, HETZNER_CX23};
 use cost_model::report::{CostReport, compute};
 
-/// `crates/clickhouse-sink/migrations/0002_spans_retention_ttl.sql` — la
-/// vraie fenêtre de rétention, pas une hypothèse séparée.
+/// `crates/clickhouse-sink/migrations/0002_spans_retention_ttl.sql`: the
+/// real retention window, not a separate assumption.
 const RETENTION_DAYS: u32 = 90;
 const DEFAULT_VOLUMES: [u64; 4] = [0, 1_000, 100_000, 1_000_000];
 
@@ -39,7 +38,7 @@ fn flag_value<'a>(args: &'a [String], prefix: &str) -> Option<&'a str> {
 
 async fn resolve_bytes_per_span(args: &[String]) -> f64 {
     if let Some(v) = flag_value(args, "--bytes-per-span=") {
-        return v.parse().expect("--bytes-per-span doit être un nombre");
+        return v.parse().expect("--bytes-per-span must be a number");
     }
 
     let client = Client::default()
@@ -50,47 +49,48 @@ async fn resolve_bytes_per_span(args: &[String]) -> f64 {
 
     match measure_bytes_per_span(&client, "observability", "spans")
         .await
-        .expect("échec de la requête system.parts — ClickHouse tourne-t-il ? (scripts/dev-clickhouse.sh up)")
-    {
+        .expect(
+            "the system.parts query failed: is ClickHouse running? (scripts/dev-clickhouse.sh up)",
+        ) {
         Some(bytes) => bytes,
         None => panic!(
-            "la table spans est vide — rejoue au moins un fixture réel \
-             (fraudos-replay/oncology-replay) avant de mesurer, ou passe \
-             --bytes-per-span=N pour sauter la mesure"
+            "the spans table is empty: replay at least one real fixture \
+             (fraudos-replay/oncology-replay) before measuring, or pass \
+             --bytes-per-span=N to skip the measurement"
         ),
     }
 }
 
 fn print_report(report: &CostReport) {
     println!(
-        "\n{} spans/jour (rétention {} j → {} spans stockés à l'état stationnaire, {:.3} Go)",
+        "\n{} spans a day (retention {} days → {} spans stored at steady state, {:.3} GB)",
         report.spans_per_day, report.retention_days, report.stored_spans, report.stored_gb
     );
     println!(
-        "  VM (100% perso ET hybride) : {:.2} €/mois — {}",
+        "  VM (all self-built AND hybrid): €{:.2} a month, {}",
         report.vm_monthly_eur, HETZNER_CX23.label
     );
     match report.days_until_disk_full {
         None => println!(
-            "  disque inclus ({:.0} Go) : jamais entamé à volume 0",
+            "  included disk ({:.0} GB): never touched at volume 0",
             HETZNER_CX23.included_disk_gb
         ),
         Some(days) if report.steady_state_exceeds_disk => println!(
-            "  disque inclus ({:.0} Go) : dépassé après {days:.0} jours (avant que la rétention ne plafonne la croissance)",
+            "  included disk ({:.0} GB): full after {days:.0} days (before retention caps the growth)",
             HETZNER_CX23.included_disk_gb
         ),
         Some(_) => println!(
-            "  disque inclus ({:.0} Go) : suffisant pour toute la fenêtre de rétention",
+            "  included disk ({:.0} GB): enough for the whole retention window",
             HETZNER_CX23.included_disk_gb
         ),
     }
     println!(
-        "  + stockage objet ({}) : {:.4} $/mois",
+        "  + object storage ({}): ${:.4} a month",
         BACKBLAZE_B2.label, report.object_storage_monthly_usd
     );
-    println!("  + CDN/edge : {:.2} €/mois", report.cdn_monthly_eur);
+    println!("  + CDN/edge: €{:.2} a month", report.cdn_monthly_eur);
     println!(
-        "  + registre de conteneurs : {:.2} €/mois",
+        "  + container registry: €{:.2} a month",
         report.registry_monthly_eur
     );
 }
@@ -100,10 +100,10 @@ async fn main() {
     let args: Vec<String> = std::env::args().collect();
     let bytes_per_span = resolve_bytes_per_span(&args).await;
 
-    println!("octets/span mesurés (compressés, table spans) : {bytes_per_span:.1}");
+    println!("measured bytes per span (compressed, spans table): {bytes_per_span:.1}");
 
     let volumes: Vec<u64> = match flag_value(&args, "--volume=") {
-        Some(v) => vec![v.parse().expect("--volume doit être un entier")],
+        Some(v) => vec![v.parse().expect("--volume must be an integer")],
         None => DEFAULT_VOLUMES.to_vec(),
     };
 

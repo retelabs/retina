@@ -1,5 +1,5 @@
-//! Control plane "maison" pour retina — voir `src/main.rs` pour le contexte
-//! (dossier section 5, objectif d'apprentissage plutôt que choix de cloud).
+//! Retina's home-made control plane: see `src/main.rs` for the context
+//! (design dossier section 5, a learning goal rather than a cloud choice).
 
 pub mod api;
 pub mod auth;

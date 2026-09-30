@@ -1,4 +1,4 @@
-//! Plugin contract v0 (dossier section 2.2 étape 5, section 2.4). Fixes only
+//! Plugin contract v0 (dossier section 2.2 step 5, section 2.4). Fixes only
 //! the *interpretation* contract — how a plugin inspects one kernel event
 //! and what it can contribute back. How a plugin gets loaded (native Rust
 //! trait implementation compiled in, vs a WASM module loaded dynamically via
@@ -34,7 +34,7 @@ pub struct PluginOutcome {
     pub warnings: Vec<String>,
 }
 
-/// Contract every business plugin implements (dossier section 2.2 étape 5).
+/// Contract every business plugin implements (dossier section 2.2 step 5).
 pub trait Plugin: Send + Sync {
     /// Stable identifier for logging/attribution. Not necessarily the
     /// vertical's name — a vertical may ship more than one plugin.

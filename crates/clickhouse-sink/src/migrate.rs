@@ -5,8 +5,8 @@
 //! `ALTER TABLE ... ADD COLUMN` wouldn't survive being re-run). See
 //! docs/interfaces/clickhouse-retention.md.
 //!
-//! Single-instance assumption (dossier section 4, hors périmètre du MVP :
-//! pas de haute disponibilité) : concurrent kernels racing to apply the
+//! Single-instance assumption (dossier section 4, outside the MVP: no
+//! high availability): concurrent kernels racing to apply the
 //! same migration isn't handled — there's exactly one kernel process today.
 
 use clickhouse::Client;

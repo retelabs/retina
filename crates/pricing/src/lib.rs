@@ -15,7 +15,7 @@ mod table;
 use kernel_model::ProviderName;
 
 /// How cache tokens relate to `input_tokens`, verified against
-/// docs/interfaces/semconv-genai.md (§33: "le comptage des tokens diffère
+/// docs/interfaces/semconv-genai.md (§33: "token counting differs
 /// par provider") — a real per-provider divergence, not a detail this crate
 /// invented. Getting this wrong doesn't just shift a number, it silently
 /// double-counts or drops cache tokens entirely.

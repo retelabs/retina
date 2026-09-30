@@ -1,7 +1,7 @@
 //! JSON wire format exchanged across the WASM guest/host boundary
 //! (docs/interfaces/wasm-plugin-loading.md). Deliberately its own crate,
 //! separate from `kernel-model` (which stays dependency-free, CLAUDE.md
-//! étape 1) and from `plugin-api` (whose `KernelEvent<'a>` borrows
+//! step 1) and from `plugin-api` (whose `KernelEvent<'a>` borrows
 //! `kernel-model` types directly — not serializable, and not meant to be:
 //! that type is for in-process native plugins). Both the WASM guest and the
 //! native host depend on this crate so the JSON shape is defined once, not

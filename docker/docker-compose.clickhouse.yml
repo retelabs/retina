@@ -8,7 +8,7 @@ services:
     # toutes les occurrences ensemble (`git grep clickhouse-server:`) et
     # repasser `scripts/test-integration.sh` avant.
     image: clickhouse/clickhouse-server:26.8.15.10
-    container_name: venice-clickhouse-dev
+    container_name: retina-clickhouse-dev
     ports:
       - "8123:8123" # HTTP
       - "9000:9000" # native TCP

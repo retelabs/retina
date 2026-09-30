@@ -1,7 +1,7 @@
 //! Drives the real HTTP surface (`src/api.rs`) via `tower::ServiceExt::oneshot`
 //! — same pattern `crates/query-api` uses to test its `Router` in-process,
 //! no real TCP listener needed. Runs against the real local Docker daemon
-//! (this is the same 3-service venice stack `main.rs` deploys, not a toy
+//! (this is the same 3-service retina stack `main.rs` deploys, not a toy
 //! topology) — `kernel`/`query-api` are built by `/deploy` itself now
 //! (`ImageSource::Build`), no external `docker build` prerequisite left:
 //!
@@ -19,7 +19,7 @@ use bollard::Docker;
 use http_body_util::BodyExt;
 use orchestrator::api::{AppState, build_app};
 use orchestrator::docker_client::teardown_all;
-use orchestrator::topology::{NETWORK, venice_stack};
+use orchestrator::topology::{NETWORK, retina_stack};
 use serde_json::Value;
 use tower::ServiceExt;
 
@@ -31,7 +31,7 @@ fn app() -> Router {
         AppState {
             docker: Arc::new(docker),
             network: NETWORK.to_string(),
-            services: Arc::new(venice_stack()),
+            services: Arc::new(retina_stack()),
         },
         TEST_API_KEY.to_string(),
     )
@@ -61,7 +61,7 @@ async fn request(app: Router, method: Method, path: &str) -> axum::response::Res
 async fn deploy_status_teardown_round_trip_over_http() {
     // Clean slate — a previous failed run shouldn't make this test flaky.
     let docker = Docker::connect_with_local_defaults().unwrap();
-    teardown_all(&docker, &venice_stack()).await.unwrap();
+    teardown_all(&docker, &retina_stack()).await.unwrap();
 
     let before = body_json(request(app(), Method::GET, "/status").await).await;
     for entry in before.as_array().unwrap() {

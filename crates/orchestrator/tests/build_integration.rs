@@ -1,5 +1,5 @@
 //! Runs against the real local Docker daemon and actually builds a real
-//! venice image from its real Dockerfile — the slowest test in this crate
+//! retina image from its real Dockerfile — the slowest test in this crate
 //! (a full `cargo build --release -p kernel` inside the builder stage), but
 //! the only thing that proves `ImageSource::Build` does what
 //! `docker build -f docker/kernel.Dockerfile .` used to do outside this
@@ -12,7 +12,7 @@ use orchestrator::docker_client::{
     ImageSource, ManagedService, ensure_network, ensure_running, teardown,
 };
 
-const NETWORK: &str = "venice-orchestrator-build-test-net";
+const NETWORK: &str = "retina-orchestrator-build-test-net";
 
 /// `crates/orchestrator` -> repo root, the same build context
 /// `docker/docker-compose.stack.yml` uses (`context: ..` relative to
@@ -31,8 +31,8 @@ async fn build_image_produces_a_real_runnable_kernel_container() {
     ensure_network(&docker, NETWORK).await.unwrap();
 
     let service = ManagedService {
-        name: "venice-orchestrator-build-test-kernel".to_string(),
-        image: "venice-orchestrator-test-kernel:latest".to_string(),
+        name: "retina-orchestrator-build-test-kernel".to_string(),
+        image: "retina-orchestrator-test-kernel:latest".to_string(),
         image_source: ImageSource::Build {
             context: repo_root(),
             dockerfile: "docker/kernel.Dockerfile".to_string(),

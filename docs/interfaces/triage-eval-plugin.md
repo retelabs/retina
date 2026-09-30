@@ -46,7 +46,7 @@ posture que `MedicalPlugin` face à un span sans `oncology.current_step`.
 
 **Attribut de sortie** : `eval.triage.tag_known` (`Bool`) — nouveau
 namespace `eval.*`, distinct de `oncology.*` (donnée brute posée par le
-client) pour séparer clairement "ce que the-client a produit" de "ce que Venice
+client) pour séparer clairement "ce que the-client a produit" de "ce que Retina
 en a déduit". Proposé par la session the-client, retenu tel quel.
 
 **Comparaison** : `tag_known = true` si le tag (normalisé
@@ -74,7 +74,7 @@ recompiler le kernel — un choix différent de `MedicalPlugin` (liste de
 champs figée), justifié parce qu'un vocabulaire métier dérive dans le temps
 alors qu'un schéma de gouvernance HIPAA/GDPR ne bouge pas au même rythme.
 
-## Volet 2 (jugement sémantique summary/compliance) — tranché, pas de code côté Venice
+## Volet 2 (jugement sémantique summary/compliance) — tranché, pas de code côté Retina
 
 Décision prise avec l'utilisateur (2026-08-17), après une première piste
 écartée : un binaire séparé (`eval-worker`) qui irait relire les
@@ -82,13 +82,13 @@ transcripts/sorties d'agent dans ClickHouse pour appeler un juge LLM a été
 envisagé, puis rejeté — `docs/interfaces/clickhouse-schema.md` établit déjà
 que les attributs potentiellement sensibles sont **opt-in, désactivés par
 défaut**, précisément pour ne pas stocker de donnée patient en clair dans
-Venice. Le cas réel `ComplianceAgent` (nom, date de naissance, numéro de
+Retina. Le cas réel `ComplianceAgent` (nom, date de naissance, numéro de
 sécu, statut VIH) rendrait ce risque concret, pas théorique, si le texte
-source transitait par Venice pour être jugé.
+source transitait par Retina pour être jugé.
 
 **Décision retenue** : le juge sémantique tourne **côté client** (the-client, ou
 tout futur client), avec son propre texte, sa propre clé API, son propre
-budget — jamais transmis à Venice. Seul le **verdict structuré** est
+budget — jamais transmis à Retina. Seul le **verdict structuré** est
 posté comme attribut sur le span `invoke_agent`, namespace `eval.*` (même
 que `eval.triage.tag_known` ci-dessus), valeur typée (bool/int/float),
 jamais de texte libre en sortie de verdict — cohérent avec pourquoi
@@ -96,11 +96,11 @@ jamais de texte libre en sortie de verdict — cohérent avec pourquoi
 `oncology-governance.md`) : un verdict en prose n'est pas interrogeable,
 un verdict structuré l'est.
 
-**Conséquence** : aucun nouveau crate/table/migration/clé API côté Venice
+**Conséquence** : aucun nouveau crate/table/migration/clé API côté Retina
 pour ce volet — `extra_attributes` (`Map(String, String)`, déjà générique)
 absorbe `eval.summary.*`/`eval.compliance.*` exactement comme `oncology.*`
 aujourd'hui. Généralise mieux qu'un `eval-worker` centralisé : pas de
-couplage Venice à un fournisseur LLM ou un format de texte par client,
+couplage Retina à un fournisseur LLM ou un format de texte par client,
 cohérent avec le mono-tenant actuel (ADR-0001) plutôt que d'ajouter une
 responsabilité multi-client. Convention à communiquer à chaque client qui
 veut l'utiliser, pas un contrat à faire évoluer côté kernel.

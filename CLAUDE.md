@@ -721,6 +721,23 @@ nécessaire. **Volontairement pas fait** : renommage du repo GitLab
 répertoire local — reportés avec l'accord explicite de l'utilisateur, notés
 en mémoire pour ne pas être oubliés d'une session à l'autre.
 
+## Renommage en Retina et migration vers GitHub (2026-09-30)
+
+Venice devient **Retina**, dans l'organisation GitHub `retelabs`
+(`github.com/retelabs/retina`, privé pour l'instant) ; GitLab
+(`the original repository`) reste l'historique d'origine. Raisons : conflit de nom
+avec Venice.ai, et écart dépôt (trellis) / produit (Venice). Les sections
+datées ci-dessus gardent l'ancien nom — c'est un journal, pas réécrit.
+
+Renommé : textes produit, `retina-tui`, réseaux `retina-edge/app/data`
+(prod), images `retina-kernel`/`retina-query-api`, conteneurs et réseaux
+`retina-orchestrator-*`, identifiants (`retina_stack`, `retina_block`…).
+**Pas encore** : le logo (PNG `UI/assets/logos/logo_venice_v*.png` et badge
+ASCII, un « V ») attend un nouveau visuel — décision de l'utilisateur. En
+prod, le prochain déploiement crée les réseaux `retina-*` ; les anciens
+`venice-*` restent orphelins jusqu'à `docker network prune` (le volume
+`clickhouse-prod-data` n'est pas renommé, donc les données restent).
+
 ## Interface terminal (`crates/tui`) — fait (2026-08-17)
 
 Avant le chantier cloud : un front demandé par l'utilisateur, tranché en

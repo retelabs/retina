@@ -15,7 +15,7 @@ use crate::content;
 /// Approximates the teal in `UI/assets/logos/logo_venice_v1.png` — an
 /// `Rgb` value, so it only renders as true teal on a truecolor terminal;
 /// degrades to the nearest ANSI color elsewhere rather than failing.
-const VENICE_TEAL: Color = Color::Rgb(15, 110, 110);
+const RETINA_TEAL: Color = Color::Rgb(15, 110, 110);
 
 fn now_unix_nano() -> u64 {
     SystemTime::now()
@@ -54,7 +54,7 @@ impl Canvas {
             .into_iter()
             .map(|row| {
                 let text: String = row.into_iter().collect();
-                Line::from(Span::styled(text, Style::default().fg(VENICE_TEAL)))
+                Line::from(Span::styled(text, Style::default().fg(RETINA_TEAL)))
                     .alignment(Alignment::Center)
             })
             .collect()
@@ -71,7 +71,7 @@ impl Canvas {
 /// interpolation) rather than typed by eye, so proportions stay correct at
 /// any `height` instead of only looking right at whichever size it was
 /// eyeballed against.
-fn venice_badge_lines(height: u16) -> Vec<Line<'static>> {
+fn retina_badge_lines(height: u16) -> Vec<Line<'static>> {
     let h = (height as i32).max(10);
     let radius_y = h as f64 / 2.0;
     // Terminal character cells are roughly twice as tall as they are wide —
@@ -188,7 +188,7 @@ fn splash_caption_lines() -> Vec<Line<'static>> {
         Line::from(Span::styled(
             "V E N I C E",
             Style::default()
-                .fg(VENICE_TEAL)
+                .fg(RETINA_TEAL)
                 .add_modifier(Modifier::BOLD),
         ))
         .alignment(Alignment::Center),
@@ -224,7 +224,7 @@ fn centered_rect(outer: Rect, width: u16, height: u16) -> Rect {
 
 /// `logo` is `None` when `crate::logo::load()` failed (decode error,
 /// unexpected font metrics) — falls back to the computed ASCII badge
-/// (`venice_badge_lines`) rather than showing a blank gap where the real
+/// (`retina_badge_lines`) rather than showing a blank gap where the real
 /// image would have been.
 pub fn draw_splash(frame: &mut Frame, logo: Option<&crate::logo::Logo>) {
     let area = frame.area();
@@ -248,7 +248,7 @@ pub fn draw_splash(frame: &mut Frame, logo: Option<&crate::logo::Logo>) {
         }
         None => {
             let badge_height = area.height.saturating_sub(10).clamp(10, 18);
-            let mut lines = venice_badge_lines(badge_height);
+            let mut lines = retina_badge_lines(badge_height);
             lines.extend(caption);
             let content_height = lines.len() as u16;
             let vchunks = Layout::default()
@@ -288,14 +288,14 @@ pub fn draw(frame: &mut Frame, app: &App) {
 
 /// Shared border style so every panel reads as one app, not a grab-bag of
 /// default-white ratatui boxes.
-fn venice_block(title: &str) -> Block<'_> {
+fn retina_block(title: &str) -> Block<'_> {
     Block::default()
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(VENICE_TEAL))
+        .border_style(Style::default().fg(RETINA_TEAL))
         .title(Span::styled(
             title,
             Style::default()
-                .fg(VENICE_TEAL)
+                .fg(RETINA_TEAL)
                 .add_modifier(Modifier::BOLD),
         ))
 }
@@ -309,11 +309,11 @@ fn draw_tabs(frame: &mut Frame, area: Rect, current: View) {
         View::Help => 3,
     };
     let tabs = Tabs::new(titles.to_vec())
-        .block(venice_block(" Venice "))
+        .block(retina_block(" Retina "))
         .select(selected)
         .highlight_style(
             Style::default()
-                .fg(VENICE_TEAL)
+                .fg(RETINA_TEAL)
                 .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
         );
     frame.render_widget(tabs, area);
@@ -341,12 +341,12 @@ fn draw_traces(frame: &mut Frame, area: Rect, app: &App) {
     }
 
     let list = List::new(items)
-        .block(venice_block(
+        .block(retina_block(
             " Recent traces (↑/↓, Enter for detail, r to refresh) ",
         ))
         .highlight_style(
             Style::default()
-                .bg(VENICE_TEAL)
+                .bg(RETINA_TEAL)
                 .fg(Color::Black)
                 .add_modifier(Modifier::BOLD),
         )
@@ -391,7 +391,7 @@ fn draw_trace_detail(frame: &mut Frame, area: Rect, app: &App) {
         app.trace_spans.len()
     );
 
-    let paragraph = Paragraph::new(lines).block(venice_block(&title));
+    let paragraph = Paragraph::new(lines).block(retina_block(&title));
     frame.render_widget(paragraph, area);
 }
 
@@ -410,7 +410,7 @@ fn draw_metrics(frame: &mut Frame, area: Rect, app: &App) {
                     Span::styled(
                         format!("{:<12}", kind.kind),
                         Style::default()
-                            .fg(VENICE_TEAL)
+                            .fg(RETINA_TEAL)
                             .add_modifier(Modifier::BOLD),
                     ),
                     Span::raw(format!(
@@ -427,7 +427,7 @@ fn draw_metrics(frame: &mut Frame, area: Rect, app: &App) {
         }
     }
 
-    let paragraph = Paragraph::new(lines).block(venice_block(" Summary (r to refresh) "));
+    let paragraph = Paragraph::new(lines).block(retina_block(" Summary (r to refresh) "));
     frame.render_widget(paragraph, area);
 }
 
@@ -442,7 +442,7 @@ pub fn draw_content_page(
     count: usize,
 ) {
     let title = format!(" {} ({}/{}) ", page.title, index + 1, count);
-    let paragraph = Paragraph::new(page.body.clone()).block(venice_block(&title));
+    let paragraph = Paragraph::new(page.body.clone()).block(retina_block(&title));
     frame.render_widget(paragraph, area);
 }
 

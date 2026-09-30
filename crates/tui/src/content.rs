@@ -4,13 +4,13 @@
 //! functions so there's still exactly one place that owns each page's
 //! text:
 //! - `intro_pages()` — the full onboarding tour (`main.rs::show_intro`),
-//!   shown once at startup: what Venice is, what it does, how to start.
+//!   shown once at startup: what Retina is, what it does, how to start.
 //! - `reference_pages()` — the in-app `View::Help` tab (`ui.rs`), reachable
 //!   any time via `Tab`: just the `man`-style quick reference (commands,
 //!   glossary), not the onboarding narrative — that's a one-time tour, not
 //!   something to re-read while using the app.
 //!
-//! Product-facing copy: what Venice is, what it does, how to use it —
+//! Product-facing copy: what Retina is, what it does, how to use it —
 //! not an engineering changelog. Internal history (the trellis rename,
 //! verification details) belongs in `CLAUDE.md`, not here.
 
@@ -47,14 +47,14 @@ fn kv(key: &str, key_width: usize, desc: &str) -> Line<'static> {
     ])
 }
 
-fn venice_page() -> Page {
+fn retina_page() -> Page {
     Page {
-        title: "Venice",
+        title: "Retina",
         body: vec![
             line("Observability for agentic LLM workflows."),
             Line::default(),
             line("Send traces from any OpenTelemetry SDK — zero custom code."),
-            line("Venice ingests them, understands your business logic through"),
+            line("Retina ingests them, understands your business logic through"),
             line("plugins, and stores everything so you can query it later."),
             Line::default(),
             line("Not a generic dashboard: a kernel that reads what your agents"),
@@ -92,7 +92,7 @@ fn get_started_page() -> Page {
         title: "Get started",
         body: vec![
             line("Point any OpenTelemetry SDK at the kernel's gRPC endpoint —"),
-            line("no Venice-specific code required."),
+            line("no Retina-specific code required."),
             Line::default(),
             line("This dashboard mirrors the query API: browse recent traces,"),
             line("drill into a trace's span tree, or check the metrics summary."),
@@ -157,7 +157,7 @@ fn glossary_page() -> Page {
 /// the in-app "Help" tab offers — read once, end to end.
 pub fn intro_pages() -> Vec<Page> {
     vec![
-        venice_page(),
+        retina_page(),
         what_it_does_page(),
         get_started_page(),
         commands_page(),

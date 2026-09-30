@@ -188,7 +188,7 @@ progression jusqu'à la fin (ou une erreur).
   d'abord.
 - **`ImageSource::Local` reste disponible** pour un service dont ce control
   plane ne doit gérer l'image ni en la tirant ni en la construisant — plus
-  utilisé par la topologie Venice aujourd'hui, mais un choix valide de
+  utilisé par la topologie Retina aujourd'hui, mais un choix valide de
   l'API.
 
 Trouvaille réelle : `BuildInfo` (chaque événement du flux `/build`) n'a pas

@@ -1,6 +1,6 @@
 //! Thin HTTP client for `query-api` — reuses its exact DTOs
 //! (`query_api::dto`) rather than a second hand-written copy of the wire
-//! shape. Same auth convention as every other Venice surface
+//! shape. Same auth convention as every other Retina surface
 //! (docs/interfaces/kernel-auth.md): `authorization: Bearer <QUERY_API_KEY>`.
 
 use query_api::dto::{MetricsSummaryDto, SpanDto, TraceSummaryDto};

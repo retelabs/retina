@@ -2,7 +2,7 @@
 //! at the context root. Deliberately reduced from the real `.dockerignore`
 //! spec (no anchoring via a leading `/`, no negation with `!`) — this
 //! repo's actual `.dockerignore` (`target/`, `.fastembed_cache/`, `.git/`,
-//! `.gitlab-ci.yml`, `*.md`) never needs either, and a match-any-component
+//! `.github/`, `*.md`) never needs either, and a match-any-component
 //! rule is honest about what it does rather than a partial reimplementation
 //! of the full spec pretending to be complete.
 
@@ -97,7 +97,7 @@ mod tests {
             "target/".to_string(),
             ".fastembed_cache/".to_string(),
             ".git/".to_string(),
-            ".gitlab-ci.yml".to_string(),
+            ".github/".to_string(),
             "*.md".to_string(),
         ]
     }
@@ -120,8 +120,11 @@ mod tests {
     }
 
     #[test]
-    fn ignores_exact_file_match() {
-        assert!(is_ignored(&PathBuf::from(".gitlab-ci.yml"), &patterns()));
+    fn ignores_files_below_an_ignored_directory() {
+        assert!(is_ignored(
+            &PathBuf::from(".github/workflows/ci.yml"),
+            &patterns()
+        ));
     }
 
     #[test]

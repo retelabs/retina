@@ -47,6 +47,10 @@ pub const BACKBLAZE_B2: ObjectStoragePricing = ObjectStoragePricing {
 /// réaliste pour ce projet, pas seulement à volume zéro.
 pub const CDN_MONTHLY_EUR: f64 = 0.0;
 
-/// GitLab Container Registry — déjà en place (`.gitlab-ci.yml`), pas un
-/// nouveau prix à vérifier.
+/// GitHub Container Registry (ghcr.io/retelabs, depuis la migration du
+/// 2026-09-30). Vérifié sur docs.github.com (billing, GitHub Packages) :
+/// gratuit pour les paquets publics ; en privé, le plan Free d'organisation
+/// inclut 500 Mo de stockage et 1 Go de transfert par mois, bloqué au-delà
+/// sans moyen de paiement. La CI ne pousse une image que sur un tag `v*` ou à
+/// la main, ce qui reste dans ce quota — d'où 0€.
 pub const CONTAINER_REGISTRY_MONTHLY_EUR: f64 = 0.0;

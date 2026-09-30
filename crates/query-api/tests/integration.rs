@@ -64,7 +64,7 @@ fn authed_request(uri: impl AsRef<str>) -> Request<Body> {
 }
 
 /// See the identical comment in crates/clickhouse-sink/tests/integration.rs
-/// — env-configurable so this also works against a GitLab CI service
+/// — env-configurable so this also works against a CI service
 /// (reachable by alias, not `localhost`), not just local Docker Compose.
 fn test_client() -> Client {
     Client::default()

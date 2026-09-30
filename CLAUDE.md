@@ -738,6 +738,13 @@ prod, le prochain déploiement crée les réseaux `retina-*` ; les anciens
 `venice-*` restent orphelins jusqu'à `docker network prune` (le volume
 `clickhouse-prod-data` n'est pas renommé, donc les données restent).
 
+CI : `.github/workflows/ci.yml` remplace `.gitlab-ci.yml` (supprimé) —
+fmt/clippy/`cargo audit`, tests unitaires, puis `scripts/test-integration.sh
+--with-docker` avec ClickHouse en service ; images `ghcr.io/retelabs/retina-*`
+construites à chaque passage, poussées seulement sur tag `v*` ou à la main
+(quota GHCR privé : 500 Mo, voir `docs/cost-model.md`). Déclenchée sur main,
+les PR et à la main, pas sur chaque push de dev.
+
 ## Interface terminal (`crates/tui`) — fait (2026-08-17)
 
 Avant le chantier cloud : un front demandé par l'utilisateur, tranché en

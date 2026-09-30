@@ -49,7 +49,7 @@ fn env_or(key: &str, default: &str) -> String {
 
 /// Reads connection details from the environment (falling back to the local
 /// `scripts/dev-clickhouse.sh` defaults) rather than hardcoding
-/// `localhost:8123` — GitLab CI runs this test inside a container where
+/// `localhost:8123` — CI runs this test inside a container where
 /// ClickHouse is reachable via its service alias, not `localhost` (found by
 /// reproducing the CI job locally after a hardcoded `localhost` passed
 /// every local run but failed the first real pipeline).

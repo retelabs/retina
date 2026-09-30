@@ -48,8 +48,12 @@ contradictoires pour Hetzner (entre 3,79 € et 5,49 €/mois selon la source)
 - **CDN/edge — Cloudflare** : plan gratuit, CDN non mesuré (contrairement
   aux Workers/compute, qui eux le sont) — 0€ à tout volume réaliste pour ce
   projet, pas seulement à volume zéro. Source : cloudflare.com/plans.
-- **Registre de conteneurs — GitLab Container Registry** : déjà en place
-  (`.gitlab-ci.yml`), pas un nouveau prix à vérifier.
+- **Registre de conteneurs — GitHub Container Registry** (`ghcr.io/retelabs`,
+  depuis la migration du 2026-09-30) : gratuit pour les paquets publics ; en
+  privé, plan Free d'organisation = 500 Mo de stockage + 1 Go de transfert
+  par mois, bloqué au-delà sans moyen de paiement. Source :
+  docs.github.com, billing « GitHub Packages ». La CI ne pousse d'image que
+  sur un tag `v*` ou à la main, pour rester dans ce quota.
 
 ## Ce que le modèle calcule
 

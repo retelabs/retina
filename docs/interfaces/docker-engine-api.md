@@ -174,7 +174,7 @@ progression jusqu'à la fin (ou une erreur).
   workspace Cargo, pas seulement leur propre crate.
 - **`.dockerignore` respecté, mais volontairement réduit** : matching par
   composant de chemin à n'importe quelle profondeur (`target/`,
-  `.fastembed_cache/`, `.git/`, `.gitlab-ci.yml`, `*.md`) — pas d'ancrage
+  `.fastembed_cache/`, `.git/`, `.github/`, `*.md`) — pas d'ancrage
   via `/` en tête, pas de négation `!`. Le vrai `.dockerignore` de ce repo
   n'a besoin ni de l'un ni de l'autre ; documenté comme une réduction
   assumée, pas une réimplémentation partielle qui prétendrait être complète.

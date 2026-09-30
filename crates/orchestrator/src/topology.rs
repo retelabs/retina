@@ -28,7 +28,7 @@ fn clickhouse_service() -> ManagedService {
     // sa propre définition du service.
     ManagedService {
         name: CLICKHOUSE_NAME.to_string(),
-        image: "clickhouse/clickhouse-server:latest".to_string(),
+        image: "clickhouse/clickhouse-server:26.8.15.10".to_string(),
         image_source: ImageSource::Registry,
         env: vec![
             "CLICKHOUSE_DB=observability".to_string(),

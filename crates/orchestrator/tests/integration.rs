@@ -21,7 +21,7 @@ const NETWORK: &str = "venice-orchestrator-test-net";
 fn clickhouse_test_service(name: &str) -> ManagedService {
     ManagedService {
         name: name.to_string(),
-        image: "clickhouse/clickhouse-server:latest".to_string(),
+        image: "clickhouse/clickhouse-server:26.8.15.10".to_string(),
         image_source: ImageSource::Registry,
         env: vec![
             "CLICKHOUSE_DB=observability".to_string(),

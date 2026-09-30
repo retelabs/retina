@@ -125,7 +125,7 @@ impl From<&HealthCheckSpec> for HealthConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ImageSource {
     /// Pulled from a registry if not already present locally — what
-    /// `clickhouse/clickhouse-server:latest` is.
+    /// the pinned `clickhouse/clickhouse-server` image is.
     Registry,
     /// Must already exist locally — for a service whose image this control
     /// plane is deliberately not responsible for at all (neither pulled

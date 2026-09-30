@@ -6,7 +6,7 @@
 
 services:
   clickhouse:
-    image: clickhouse/clickhouse-server:latest
+    image: clickhouse/clickhouse-server:26.8.15.10
     environment:
       CLICKHOUSE_DB: observability
       CLICKHOUSE_USER: dev

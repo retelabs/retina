@@ -67,7 +67,7 @@ test:
   <<: *cargo-cache
   <<: *on_main_auto_else_manual
   services:
-    - name: clickhouse/clickhouse-server:latest
+    - name: clickhouse/clickhouse-server:26.8.15.10
       alias: clickhouse
   variables:
     CLICKHOUSE_DB: observability

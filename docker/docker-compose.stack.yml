@@ -1,7 +1,7 @@
-# Squelette de déploiement (dossier étape 6) : assemble ClickHouse +
-# `kernel` (otlp-receiver + clickhouse-sink) + `query-api` avec les mêmes
-# images qui tourneraient sur la VM cible, quel que soit le cloud choisi
-# (dossier section 5, toujours ouvert). Build depuis la racine du repo :
+# Deployment skeleton (dossier step 6): assembles ClickHouse + `kernel`
+# (otlp-receiver + clickhouse-sink) + `query-api` with the same images that
+# would run on the target VM, whatever the cloud chosen (ADR 0002). Build
+# from the repository root:
 #   docker compose -f docker/docker-compose.stack.yml up --build
 
 services:

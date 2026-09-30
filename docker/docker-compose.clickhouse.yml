@@ -1,12 +1,12 @@
 services:
   clickhouse:
-    # Version exacte épinglée, partout (compose dev/stack/prod, CI,
-    # orchestrator) : le client `clickhouse` 0.15.1 casse contre 26.9
-    # (`Decompression("incorrect magic number")` dès les migrations,
-    # constaté le 2026-09-30), donc un tag flottant peut couper l'ingestion
-    # au prochain pull. 26.8 est une LTS. Changer de version = changer
-    # toutes les occurrences ensemble (`git grep clickhouse-server:`) et
-    # repasser `scripts/test-integration.sh` avant.
+    # An exact version, pinned everywhere (compose dev/stack/prod, CI,
+    # orchestrator): the `clickhouse` 0.15 client breaks against 26.9
+    # (`Decompression("incorrect magic number")` as soon as migrations run,
+    # seen on 2026-09-30), so a floating tag could stop ingestion at the next
+    # pull. 26.8 is an LTS. Changing the version means changing every
+    # occurrence together (`git grep clickhouse-server:`) and running
+    # `scripts/test-integration.sh` first.
     image: clickhouse/clickhouse-server:26.8.15.10
     container_name: retina-clickhouse-dev
     ports:

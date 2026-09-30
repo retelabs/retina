@@ -1,24 +1,23 @@
-# Squelette de déploiement VPS (dossier étape 6, volet TLS) — variante prod
-# de docker-compose.stack.yml : mêmes 3 services, plus Caddy en frontal TLS.
-# kernel/query-api ne publient plus de port sur l'hôte — Caddy est la seule
-# porte d'entrée publique (ports 80/443). Secrets réels via un fichier .env
-# non commité (voir docker/.env.prod.example), même posture que
-# CLICKHOUSE_PASSWORD/POSTGRES_PASSWORD ailleurs dans ce repo.
+# VPS deployment skeleton (dossier step 6, TLS part): the production variant
+# of docker-compose.stack.yml, the same three services plus Caddy as the TLS
+# front. kernel/query-api publish no port on the host: Caddy is the only
+# public entry point (ports 80/443). Real secrets come from an uncommitted
+# .env file (see docker/.env.prod.example), like CLICKHOUSE_PASSWORD elsewhere
+# in this repository.
 #
-# Segmentation réseau — 3 zones, même schéma qu'un projet client existant
-# (fn-edge/fn-app/fn-data) plutôt qu'un unique réseau bridge implicite :
+# Network segmentation, three zones rather than one implicit bridge network:
 #
-#   retina-edge │ Caddy seul — seule zone atteignable depuis l'extérieur
-#   retina-app  │ Caddy ↔ kernel/query-api — logique applicative
-#   retina-data │ kernel/query-api ↔ ClickHouse — zone critique, 0 accès
-#               │ depuis retina-edge (Caddy n'y est pas rattaché du tout)
+#   retina-edge │ Caddy only: the only zone reachable from outside
+#   retina-app  │ Caddy ↔ kernel/query-api: application logic
+#   retina-data │ kernel/query-api ↔ ClickHouse: critical zone, no access
+#               │ from retina-edge (Caddy is not attached to it at all)
 #
 #   Internet → Caddy (edge) → kernel/query-api (app) → ClickHouse (data)
 #                    ✗ ────────────────────────────────────────────────
 #
-# Démarrage : cp docker/.env.prod.example docker/.env.prod, éditez les
-# valeurs (scripts/gen-secrets.sh pour les jetons), pointez le DNS de
-# ${API_HOST}/${OTLP_HOST} vers l'IP du VPS, puis :
+# Start: cp docker/.env.prod.example docker/.env.prod, edit the values
+# (scripts/gen-secrets.sh for the tokens), point the DNS of
+# ${API_HOST}/${OTLP_HOST} at the VPS's IP, then:
 #   docker compose -f docker/docker-compose.prod.yml --env-file docker/.env.prod up -d --build
 
 networks:
@@ -26,10 +25,10 @@ networks:
     driver: bridge
   retina-app:
     driver: bridge
-    internal: true    # aucun accès internet direct depuis kernel/query-api
+    internal: true    # no direct internet access from kernel/query-api
   retina-data:
     driver: bridge
-    internal: true    # zone critique — ClickHouse injoignable depuis retina-edge
+    internal: true    # critical zone: ClickHouse unreachable from retina-edge
 
 services:
   clickhouse:
@@ -47,7 +46,7 @@ services:
       timeout: 2s
       retries: 30
     networks:
-      - retina-data    # fn-edge/fn-app n'ont pas accès à ce réseau
+      - retina-data    # edge and app have no access to this network
     restart: unless-stopped
 
   kernel:
@@ -65,11 +64,11 @@ services:
       KERNEL_API_KEY: ${KERNEL_API_KEY}
       KERNEL_API_KEYS_EXTRA: ${KERNEL_API_KEYS_EXTRA:-}
       ENABLED_PLUGINS: ${ENABLED_PLUGINS:-}
-    # Pas de port publié sur l'hôte — seul Caddy (ci-dessous) est joignable
-    # depuis l'extérieur.
+    # No port published on the host: only Caddy (below) is reachable from
+    # outside.
     networks:
-      - retina-app     # reçoit le trafic de Caddy
-      - retina-data    # atteint ClickHouse
+      - retina-app     # receives Caddy's traffic
+      - retina-data    # reaches ClickHouse
     restart: unless-stopped
 
   query-api:
@@ -87,8 +86,8 @@ services:
       QUERY_API_KEY: ${QUERY_API_KEY}
       QUERY_API_KEYS_EXTRA: ${QUERY_API_KEYS_EXTRA:-}
     networks:
-      - retina-app     # reçoit le trafic de Caddy
-      - retina-data    # atteint ClickHouse
+      - retina-app     # receives Caddy's traffic
+      - retina-data    # reaches ClickHouse
     restart: unless-stopped
 
   caddy:
@@ -108,8 +107,8 @@ services:
       - caddy-data:/data
       - caddy-config:/config
     networks:
-      - retina-edge    # seule zone avec une route internet
-      - retina-app     # pour atteindre kernel/query-api par nom
+      - retina-edge    # the only zone with an internet route
+      - retina-app     # to reach kernel/query-api by name
     restart: unless-stopped
 
 volumes:

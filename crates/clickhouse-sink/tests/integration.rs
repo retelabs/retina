@@ -17,6 +17,32 @@ use kernel_model::{
 };
 use otlp_receiver::{ConvertedEvent, SpanSink};
 
+/// A trace id no earlier run used: rows are no longer purged between runs
+/// (see `recent_ns`), so a fixed id would find the previous runs' rows too.
+/// First byte `tag` keeps ids readable per test; the rest is the clock.
+fn unique_trace_id(tag: u8) -> TraceId {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let mut bytes = nanos.to_be_bytes();
+    bytes[0] = tag;
+    TraceId::try_from(&bytes[..]).unwrap()
+}
+
+/// A start time in the recent past, in Unix nanoseconds. The `spans` table
+/// drops rows 90 days after `start_time` (migration 0002): a fixture dated
+/// 1970 is already expired when inserted and disappears at the next
+/// background merge, so a read-back then races that merge (seen failing
+/// with 0 rows on 2026-09-30).
+fn recent_ns() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos() as u64
+        - 60_000_000_000
+}
+
 fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
 }
@@ -38,13 +64,14 @@ fn test_client() -> Client {
 #[tokio::test]
 #[ignore = "requires `scripts/dev-clickhouse.sh up`"]
 async fn insert_and_read_back_a_model_call_span() {
+    let t0 = recent_ns();
     let client = test_client();
 
     run_migrations(&client).await.expect(
         "failed to apply migrations — is ClickHouse running? (scripts/dev-clickhouse.sh up)",
     );
 
-    let trace_id = TraceId::try_from(&[7u8; 16][..]).unwrap();
+    let trace_id = unique_trace_id(7);
     let span_id = SpanId::try_from(&[9u8; 8][..]).unwrap();
 
     let event = ConvertedEvent::ModelCall(ModelCallEvent {
@@ -52,8 +79,8 @@ async fn insert_and_read_back_a_model_call_span() {
             trace_id,
             span_id,
             parent_span_id: None,
-            start_time_unix_nano: 1_000,
-            end_time_unix_nano: 1_500,
+            start_time_unix_nano: t0 + 1_000,
+            end_time_unix_nano: t0 + 1_500,
             status: SpanStatus::default(),
             error_type: None,
         },

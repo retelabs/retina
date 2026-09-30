@@ -18,6 +18,32 @@ use plugin_fraudos::FraudosPlugin;
 use plugin_medical::MedicalPlugin;
 use plugin_sink::PluginSink;
 
+/// A trace id no earlier run used: rows are no longer purged between runs
+/// (see `recent_ns`), so a fixed id would find the previous runs' rows too.
+/// First byte `tag` keeps ids readable per test; the rest is the clock.
+fn unique_trace_id(tag: u8) -> TraceId {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let mut bytes = nanos.to_be_bytes();
+    bytes[0] = tag;
+    TraceId::try_from(&bytes[..]).unwrap()
+}
+
+/// A start time in the recent past, in Unix nanoseconds. The `spans` table
+/// drops rows 90 days after `start_time` (migration 0002): a fixture dated
+/// 1970 is already expired when inserted and disappears at the next
+/// background merge, so a read-back then races that merge (seen failing
+/// with 0 rows on 2026-09-30).
+fn recent_ns() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos() as u64
+        - 60_000_000_000
+}
+
 fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
 }
@@ -36,13 +62,14 @@ async fn migrate(client: &Client) {
     );
 }
 
-fn sample_span(id_byte: u8) -> SpanContext {
+fn sample_span(trace_id: TraceId, id_byte: u8) -> SpanContext {
+    let t0 = recent_ns();
     SpanContext {
-        trace_id: TraceId::try_from(&[id_byte; 16][..]).unwrap(),
+        trace_id,
         span_id: SpanId::try_from(&[id_byte; 8][..]).unwrap(),
         parent_span_id: None,
-        start_time_unix_nano: 1_000,
-        end_time_unix_nano: 1_500,
+        start_time_unix_nano: t0 + 1_000,
+        end_time_unix_nano: t0 + 1_500,
         status: SpanStatus::default(),
         error_type: None,
     }
@@ -73,9 +100,9 @@ async fn fraudos_plugin_warning_lands_in_a_real_clickhouse_row() {
     let plugins: Vec<Box<dyn Plugin>> = vec![Box::new(FraudosPlugin), Box::new(MedicalPlugin)];
     let sink = PluginSink::new(clickhouse_sink, plugins);
 
-    let trace_id = TraceId::try_from(&[11u8; 16][..]).unwrap();
+    let trace_id = unique_trace_id(11);
     let event = ConvertedEvent::AgentRun(AgentRunEvent {
-        span: sample_span(11),
+        span: sample_span(trace_id, 11),
         invocation_kind: AgentInvocationKind::Internal,
         operation_name: OperationName::InvokeAgent,
         agent_name: Some("fraud_investigator".to_string()),
@@ -131,9 +158,9 @@ async fn medical_plugin_warning_lands_in_a_real_clickhouse_row() {
     let plugins: Vec<Box<dyn Plugin>> = vec![Box::new(FraudosPlugin), Box::new(MedicalPlugin)];
     let sink = PluginSink::new(clickhouse_sink, plugins);
 
-    let trace_id = TraceId::try_from(&[22u8; 16][..]).unwrap();
+    let trace_id = unique_trace_id(22);
     let event = ConvertedEvent::AgentRun(AgentRunEvent {
-        span: sample_span(22),
+        span: sample_span(trace_id, 22),
         invocation_kind: AgentInvocationKind::Internal,
         operation_name: OperationName::InvokeAgent,
         agent_name: Some("oncology_pipeline".to_string()),

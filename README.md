@@ -42,4 +42,4 @@ en anglais ; cette documentation reste en français comme le reste du repo.
 
 ## Licence
 
-Propriétaire — tous droits réservés, voir [LICENSE](LICENSE).
+Apache-2.0, voir [LICENSE](LICENSE) et [NOTICE](NOTICE).

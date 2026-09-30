@@ -1,4 +1,4 @@
-<p align="center"><img src="UI/assets/logos/retina-mark-dark.svg" width="160" alt="Retina logo: an R drawn as a music staff wound into a spiral galaxy"></p>
+<p align="center"><img src="UI/assets/logos/retina-mark-dark.svg" width="160" alt="Retina logo: a spectral iris, an equaliser ring around a star, with an orbit"></p>
 
 # Retina
 

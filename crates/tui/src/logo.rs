@@ -1,5 +1,5 @@
 //! Loads the real logo (`UI/assets/logos/retina-mark-small-light-1024.png`,
-//! the simplified three-line mark meant for small sizes) and renders
+//! the simplified twelve-bar mark meant for small sizes) and renders
 //! it as density-based ASCII art (a character ramp from sparse to dense,
 //! picked per cell from the image's real sampled luminance and colored
 //! with its real sampled color) — not `ratatui-image`/half-blocks anymore.

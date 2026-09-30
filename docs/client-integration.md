@@ -1,94 +1,86 @@
-# Guide d'intégration client
+# Client integration guide
 
-Ce guide s'adresse à qui veut **utiliser** Retina depuis une application
-tierce — envoyer de la télémétrie, l'interroger — pas à qui développe le
-kernel lui-même. Pour le détail vérifié de chaque contrat (types exacts,
-comment chaque champ a été confirmé), voir `docs/interfaces/`, référencé
-section par section ci-dessous. Rien ici n'est nouveau : c'est une
-synthèse orientée client de contrats déjà vérifiés et déjà en production
-dans ce repo.
+This guide is for people who want to **use** Retina from their own application
+(send telemetry, query it), not for people developing the kernel itself. For
+the verified details of each contract (exact types, how each field was
+confirmed), see `docs/interfaces/`, referenced section by section below.
+Nothing here is new: it is a client-oriented summary of contracts already
+verified and already running in this repository.
 
-## Vue d'ensemble
+## Overview
 
 ```
-votre app (SDK OTel)  --OTLP/gRPC, authentifié-->  kernel (:4317)  --> ClickHouse
-dashboard / script     --HTTP, authentifié-->      query-api (:8080) <-- ClickHouse
+your app (OTel SDK)   --OTLP/gRPC, authenticated-->  kernel (:4317)    --> ClickHouse
+dashboard / script    --HTTP, authenticated-->       query-api (:8080) <-- ClickHouse
 ```
 
-Deux surfaces, deux jetons, aucune infrastructure OTel custom à écrire côté
-client — un vrai SDK OpenTelemetry suffit.
+Two surfaces, two tokens, and no custom OTel infrastructure to write on the
+client side: a standard OpenTelemetry SDK is enough.
 
-## Envoyer de la télémétrie
+## Sending telemetry
 
-### Connexion et authentification
+### Connection and authentication
 
-- Endpoint gRPC : `TraceService.Export` (proto OTLP standard,
-  `docs/interfaces/otlp-ingestion.md`), port `4317` par défaut
-  (`KERNEL_BIND`).
-- Header requis : métadonnée gRPC `authorization: Bearer <KERNEL_API_KEY>`
-  — exactement la convention `OTEL_EXPORTER_OTLP_HEADERS` qu'un SDK OTel
-  sait déjà émettre sans code custom :
+- gRPC endpoint: `TraceService.Export` (the standard OTLP proto,
+  `docs/interfaces/otlp-ingestion.md`), port `4317` by default (`KERNEL_BIND`).
+- Required header: the gRPC metadata `authorization: Bearer <KERNEL_API_KEY>`,
+  exactly the `OTEL_EXPORTER_OTLP_HEADERS` convention an OTel SDK already emits
+  with no custom code:
   ```bash
   export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
   export OTEL_EXPORTER_OTLP_HEADERS="authorization=Bearer <KERNEL_API_KEY>"
   ```
-  Détail du mécanisme et pourquoi ce header précisément :
-  `docs/interfaces/kernel-auth.md`.
-- Sans jeton valide : `UNAUTHENTICATED`. Sans span structurellement valide :
-  compté dans `rejected_spans` de la réponse (succès partiel), le reste du
-  batch est accepté.
+  How it works, and why this header: `docs/interfaces/kernel-auth.md`.
+- Without a valid token: `UNAUTHENTICATED`. A structurally invalid span is
+  counted in the response's `rejected_spans` (partial success); the rest of the
+  batch is accepted.
 
-### Ce que le kernel reconnaît
+### What the kernel recognises
 
-Le dispatch se fait uniquement sur l'attribut `gen_ai.operation.name` —
-OTLP ne porte aucun marqueur dédié "ceci est un span gen_ai". Trois valeurs
-sont routées vers un type d'événement kernel ; toute autre valeur est
-ignorée (`Unmodeled`, pas compté comme rejeté — juste hors périmètre MVP).
+Dispatch relies only on the `gen_ai.operation.name` attribute: OTLP carries no
+dedicated "this is a gen_ai span" marker. Three groups of values are routed to a
+kernel event type; any other value is ignored (`Unmodeled`, not counted as
+rejected, simply outside the MVP's scope).
 
-| `gen_ai.operation.name` | Événement kernel | Champ obligatoire en plus |
+| `gen_ai.operation.name` | Kernel event | Also required |
 |---|---|---|
-| `chat`, `generate_content`, `text_completion` | Appel modèle | `gen_ai.provider.name` |
-| `execute_tool` | Appel outil | `gen_ai.tool.name` |
-| `invoke_agent` | Run d'agent | `gen_ai.provider.name` **si** le span est de kind OTLP `CLIENT` (agent distant type Bedrock Agents) — pas requis pour un agent in-process (kind `INTERNAL`, type LangChain/CrewAI) |
+| `chat`, `generate_content`, `text_completion` | Model call | `gen_ai.provider.name` |
+| `execute_tool` | Tool call | `gen_ai.tool.name` |
+| `invoke_agent` | Agent run | `gen_ai.provider.name` **if** the span's OTLP kind is `CLIENT` (a remote agent such as Bedrock Agents); not required for an in-process agent (kind `INTERNAL`, e.g. LangChain/CrewAI) |
 
-Attributs recommandés par type (liste complète et niveaux `required`/
-`recommended`/`opt_in` : `docs/interfaces/semconv-genai.md`) :
+Recommended attributes per type (full list and `required`/`recommended`/`opt_in`
+levels: `docs/interfaces/semconv-genai.md`):
 
-- **Appel modèle** : `gen_ai.request.model`, `gen_ai.response.model`,
-  `gen_ai.usage.input_tokens`/`output_tokens` (`int`, pas de `u64` négatif
-  côté wire), `gen_ai.response.finish_reasons` (array), `gen_ai.conversation.id`.
-- **Appel outil** : `gen_ai.tool.call.id`, `gen_ai.tool.type`,
-  `gen_ai.tool.description`, `gen_ai.agent.name` (l'agent qui exécute
-  l'outil).
-- **Run d'agent** : `gen_ai.agent.name`/`id`/`description`/`version`,
-  `gen_ai.request.model` (seulement si l'agent a un modèle fixe unique, pas
-  de sélection dynamique), usages de tokens.
+- **Model call**: `gen_ai.request.model`, `gen_ai.response.model`,
+  `gen_ai.usage.input_tokens`/`output_tokens` (`int`; no negative `u64` on the
+  wire), `gen_ai.response.finish_reasons` (array), `gen_ai.conversation.id`.
+- **Tool call**: `gen_ai.tool.call.id`, `gen_ai.tool.type`,
+  `gen_ai.tool.description`, `gen_ai.agent.name` (the agent running the tool).
+- **Agent run**: `gen_ai.agent.name`/`id`/`description`/`version`,
+  `gen_ai.request.model` (only if the agent has a single fixed model, not a
+  dynamic choice), token usage.
 
-Tout attribut non reconnu de la liste ci-dessus est conservé tel quel dans
-`extra_attributes` — rien n'est perdu, juste pas promu en champ de première
-classe.
+Any attribute not listed above is kept as is in `extra_attributes`: nothing is
+lost, it is just not promoted to a first-class field.
 
-### Attributs métier (pour qu'un plugin réagisse)
+### Business attributes (for a plugin to react)
 
-Les plugins réels (`crates/plugin-fraudos`, `crates/plugin-medical`)
-interprètent des attributs `<vertical>.*` posés directement sur le span
-`invoke_agent` par l'application elle-même, pendant l'exécution — pas
-injectés après coup :
+The real plugins (`crates/plugin-fraudos`, `crates/plugin-medical`) interpret
+`<vertical>.*` attributes set directly on the `invoke_agent` span by the
+application itself, while it runs, not injected afterwards:
 
-- **fraudos** : `fraudos.final_decision` (`CONFIRMED_FRAUD`/`REQUEST_BLOCK`/
+- **fraudos**: `fraudos.final_decision` (`CONFIRMED_FRAUD`/`REQUEST_BLOCK`/
   `ESCALATED_COMPLIANCE`/`CASE_OPENED`/...), `fraudos.transaction_id`.
-- **oncology** : `oncology.current_step`, `oncology.hipaa_cleared`/
+- **oncology**: `oncology.current_step`, `oncology.hipaa_cleared`/
   `gdpr_cleared` (bool), `oncology.submitted_by`/`approved_by`.
 
-Le plugin ajoute ses propres attributs dérivés (ex.
-`fraudos.requires_urgent_review`, `oncology.awaiting_approval`) et, s'il
-détecte une anomalie, une entrée `plugin.warning` — visible dans
-`extra_attributes` du span concerné et compté dans
-`GET /metrics/summary.spans_with_warnings` (voir plus bas). Détail des
-règles de chaque plugin : `docs/interfaces/plugin-contract-v0.md`,
-`docs/interfaces/oncology-governance.md`.
+The plugin adds its own derived attributes (e.g. `fraudos.requires_urgent_review`,
+`oncology.awaiting_approval`) and, when it detects an anomaly, a
+`plugin.warning` entry, visible in the span's `extra_attributes` and counted in
+`GET /metrics/summary`'s `spans_with_warnings` (see below). Each plugin's rules:
+`docs/interfaces/plugin-contract-v0.md`, `docs/interfaces/oncology-governance.md`.
 
-### Exemple (Python, SDK OTel standard)
+### Example (Python, standard OTel SDK)
 
 ```python
 from opentelemetry import trace
@@ -99,7 +91,7 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExport
 provider = TracerProvider()
 provider.add_span_processor(
     BatchSpanProcessor(OTLPSpanExporter(endpoint="localhost:4317", insecure=True))
-    # Bearer KERNEL_API_KEY via OTEL_EXPORTER_OTLP_HEADERS, pas de code ici.
+    # Bearer KERNEL_API_KEY through OTEL_EXPORTER_OTLP_HEADERS, no code here.
 )
 trace.set_tracer_provider(provider)
 tracer = trace.get_tracer("my-agent-app")
@@ -114,57 +106,56 @@ with tracer.start_as_current_span("invoke_agent my-agent", kind=trace.SpanKind.I
         model_span.set_attribute("gen_ai.operation.name", "chat")
         model_span.set_attribute("gen_ai.provider.name", "aws.bedrock")
         model_span.set_attribute("gen_ai.request.model", "claude-sonnet")
-        # ... appel réel, puis :
+        # ... the real call, then:
         model_span.set_attribute("gen_ai.usage.input_tokens", usage.input_tokens)
         model_span.set_attribute("gen_ai.usage.output_tokens", usage.output_tokens)
 ```
 
-Squelette illustratif — vérifier l'API exacte du SDK `opentelemetry-python`
-au moment de l'écrire pour de vrai, même règle que pour tout le reste de ce
-projet.
+An illustrative skeleton: check the exact `opentelemetry-python` SDK API when
+writing it for real, the same rule as everywhere else in this project.
 
-## Interroger
+## Querying
 
-Port `8080` par défaut (`QUERY_API_BIND`), header `Authorization: Bearer
-<QUERY_API_KEY>` requis sur les 3 routes, sinon `401`. Contrat complet :
-`docs/interfaces/query-api.md`.
+Port `8080` by default (`QUERY_API_BIND`), with the header
+`Authorization: Bearer <QUERY_API_KEY>` required on all three routes, `401`
+otherwise. Full contract: `docs/interfaces/query-api.md`.
 
-### `GET /traces?limit=N` — traces récentes
+### `GET /traces?limit=N`: recent traces
 
-`limit` par défaut 50, plafonné à 500. Tableau, trié par début décroissant :
+`limit` defaults to 50, capped at 500. An array, sorted by start time, newest
+first:
 
 ```json
 [{ "trace_id": "<32 hex>", "span_count": 3, "start_time_unix_nano": 0, "end_time_unix_nano": 0 }]
 ```
 
-### `GET /traces/{trace_id}` — spans d'une trace
+### `GET /traces/{trace_id}`: a trace's spans
 
-`trace_id` en hex minuscule 32 caractères (même encodage que `traceId` en
-OTLP/JSON). `400` si mal formé, `404` si aucun span. **Liste plate**, triée
-par `start_time` — pas d'arbre JSON imbriqué, reconstruire côté client via
-`parent_span_id` (déjà présent sur chaque span).
+`trace_id` as 32 lowercase hex characters (the same encoding as `traceId` in
+OTLP/JSON). `400` if malformed, `404` if there is no span. A **flat list**,
+sorted by `start_time`: no nested JSON tree; rebuild it client-side from
+`parent_span_id` (present on every span).
 
-Champs par span (`SpanDto`, `crates/query-api/src/dto.rs`) : `trace_id`,
+Fields per span (`SpanDto`, `crates/query-api/src/dto.rs`): `trace_id`,
 `span_id`, `parent_span_id`, `kind` (`model_call`/`tool_call`/`agent_run`),
-`start_time_unix_nano`, `end_time_unix_nano`, `status_code`,
-`status_message`, `error_type`, `operation_name`, `provider_name`,
-`request_model`, `response_model`, `input_tokens`, `output_tokens`,
-`cache_read_input_tokens`, `cache_creation_input_tokens`,
-`finish_reasons`, `conversation_id`, `cost_usd`, `tool_name`, `tool_call_id`,
-`tool_type`, `tool_description`, `agent_invocation_kind`, `agent_name`,
-`agent_id`, `agent_description`, `agent_version`, et `extra_attributes`
-(objet `string → string` — tout ce qui n'est pas un champ de première
-classe, y compris les attributs `<vertical>.*` et `plugin.warning`).
+`start_time_unix_nano`, `end_time_unix_nano`, `status_code`, `status_message`,
+`error_type`, `operation_name`, `provider_name`, `request_model`,
+`response_model`, `input_tokens`, `output_tokens`, `cache_read_input_tokens`,
+`cache_creation_input_tokens`, `finish_reasons`, `conversation_id`, `cost_usd`,
+`tool_name`, `tool_call_id`, `tool_type`, `tool_description`,
+`agent_invocation_kind`, `agent_name`, `agent_id`, `agent_description`,
+`agent_version`, and `extra_attributes` (a `string → string` object: everything
+that is not a first-class field, including `<vertical>.*` attributes and
+`plugin.warning`).
 
-`cost_usd` (ajouté le 2026-08-17) : `null` sauf si le span pose
-`gen_ai.usage.input_tokens`/`output_tokens` **et** un `gen_ai.request.model`/
-`response.model` reconnu par la table de prix statique de
-`crates/pricing` (aujourd'hui : une partie des modèles OpenAI et
-Anthropic seulement — détail et lacunes connues dans
-`docs/interfaces/cost-calculation.md`). Calculé une seule fois à
-l'ingestion, jamais recalculé après un changement de tarif.
+`cost_usd` (added 2026-08-17): `null` unless the span sets
+`gen_ai.usage.input_tokens`/`output_tokens` **and** a `gen_ai.request.model`/
+`response.model` known to the static price table in `crates/pricing` (today:
+part of the OpenAI and Anthropic models only; details and known gaps in
+`docs/interfaces/cost-calculation.md`). Computed once at ingestion, never
+recomputed after a price change.
 
-### `GET /metrics/summary` — agrégats
+### `GET /metrics/summary`: aggregates
 
 ```json
 {
@@ -173,25 +164,32 @@ l'ingestion, jamais recalculé après un changement de tarif.
 }
 ```
 
-`total_cost_usd` : `null` (pas `0.0`) si aucun span du groupe n'a de coût
-calculé — distinct d'un coût réellement nul.
+`total_cost_usd`: `null` (not `0.0`) when no span of the group has a computed
+cost, which is distinct from a real cost of zero.
 
-`spans_with_warnings` : nombre de spans portant au moins une entrée
-`plugin.warning` — le signal de gouvernance/monitoring produit par les
-plugins réellement câblés dans `kernel` (`crates/plugin-sink`).
+`spans_with_warnings`: the number of spans carrying at least one
+`plugin.warning` entry, the governance and monitoring signal produced by the
+plugins wired into `kernel` (`crates/plugin-sink`).
 
-## Déployer
+## Retention
 
-Pas dupliqué ici :
-- `scripts/dev-stack.sh up` — pile Docker complète en local
+Spans are deleted 90 days after their `start_time` (ClickHouse TTL,
+`docs/interfaces/clickhouse-retention.md`). A span sent with a `start_time`
+older than that, for instance a replay of old traces, is expired on arrival and
+disappears at the next background merge.
+
+## Deploying
+
+Not repeated here:
+- `scripts/dev-stack.sh up`: the full Docker stack locally
   (`docker/docker-compose.stack.yml`).
-- `crates/orchestrator` — control plane maison, mêmes 3 services, via une
-  vraie API HTTP (`POST /deploy`, `GET /status`, `POST /teardown`) plutôt
-  que des scripts — `docs/interfaces/docker-engine-api.md`.
+- `crates/orchestrator`: a small control plane for the same three services,
+  through an HTTP API (`POST /deploy`, `GET /status`, `POST /teardown`) rather
+  than scripts: `docs/interfaces/docker-engine-api.md`.
 
-## Pour aller plus loin
+## Going further
 
-Chaque contrat ci-dessus a sa fiche complète (source vérifiée, date,
-incertitudes restantes) dans `docs/interfaces/` : `otlp-ingestion.md`,
-`semconv-genai.md`, `kernel-auth.md`, `query-api.md`,
-`plugin-contract-v0.md`, `oncology-governance.md`, `fraudos-agentspan.md`.
+Each contract above has its full sheet (verified source, date, remaining
+uncertainties) in `docs/interfaces/`: `otlp-ingestion.md`, `semconv-genai.md`,
+`kernel-auth.md`, `query-api.md`, `plugin-contract-v0.md`,
+`oncology-governance.md`, `fraudos-agentspan.md`.

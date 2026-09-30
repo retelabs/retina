@@ -61,7 +61,11 @@ fn cost_of(tokens: u64, price_per_million_usd: f64) -> f64 {
 /// request and therefore the one whose price applies.
 ///
 /// Returns `None` if the provider/model combination isn't in the price
-/// table, or if `model` is `None` — never a wrong number, only "unpriced".
+/// table, if `model` is `None`, or if the input or output token count is
+/// missing: a span that reports no usage, or only half of it, is "unpriced",
+/// not free and not undercounted. Never a wrong number, only "unpriced".
+/// Cache counts may be absent (most providers omit them when unused) and
+/// count as zero.
 pub fn estimate_cost_usd(
     provider: &ProviderName,
     model: Option<&str>,
@@ -72,8 +76,8 @@ pub fn estimate_cost_usd(
 ) -> Option<f64> {
     let pricing = find_pricing(provider, model?)?;
 
-    let input = input_tokens.unwrap_or(0);
-    let output = output_tokens.unwrap_or(0);
+    let input = input_tokens?;
+    let output = output_tokens?;
     let cache_read = cache_read_tokens.unwrap_or(0);
     let cache_write = cache_creation_tokens.unwrap_or(0);
 
@@ -120,6 +124,56 @@ mod tests {
                 None
             ),
             None
+        );
+    }
+
+    #[test]
+    fn a_known_model_without_token_counts_yields_none_not_zero() {
+        // Seen for real on 2026-09-30: an oncology replay's gpt-4o call
+        // carries no usage at all and was stored with cost_usd = 0.
+        assert_eq!(
+            estimate_cost_usd(
+                &ProviderName::OpenAi,
+                Some("gpt-4o"),
+                None,
+                None,
+                None,
+                None
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn a_partial_usage_report_yields_none_rather_than_an_undercount() {
+        for (input, output) in [(Some(1_000), None), (None, Some(1_000))] {
+            assert_eq!(
+                estimate_cost_usd(
+                    &ProviderName::OpenAi,
+                    Some("gpt-4o"),
+                    input,
+                    output,
+                    None,
+                    None
+                ),
+                None,
+                "input {input:?}, output {output:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn zero_tokens_reported_is_a_real_zero_cost() {
+        assert_eq!(
+            estimate_cost_usd(
+                &ProviderName::OpenAi,
+                Some("gpt-4o"),
+                Some(0),
+                Some(0),
+                None,
+                None
+            ),
+            Some(0.0)
         );
     }
 
@@ -177,22 +231,6 @@ mod tests {
         .unwrap();
         let expected = cost_of(1_000, 2.00) + cost_of(600, 0.20) + cost_of(200, 2.50);
         assert!((cost - expected).abs() < 1e-12);
-    }
-
-    #[test]
-    fn missing_token_counts_default_to_zero_not_none() {
-        // A span with only output_tokens populated should still price the
-        // output rather than bailing out entirely.
-        let cost = estimate_cost_usd(
-            &ProviderName::OpenAi,
-            Some("gpt-4o"),
-            None,
-            Some(1_000_000),
-            None,
-            None,
-        )
-        .unwrap();
-        assert!((cost - 10.00).abs() < 1e-9);
     }
 
     #[test]

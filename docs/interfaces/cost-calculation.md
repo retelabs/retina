@@ -55,6 +55,16 @@ differently depending on their TTL (5 minutes vs 1 hour), but
 `crates/pricing` always uses the 5-minute rate (Anthropic's default prompt-cache
 behaviour).
 
+## Missing token counts: unpriced, not free
+
+Both `input_tokens` and `output_tokens` must be present for a span to be
+priced; otherwise `cost_usd` is `NULL`. A span that reports no usage is not
+free, and a span that reports half of it would be undercounted: both would
+be wrong numbers, and this table prefers an unpriced span to a wrong one.
+Cache token counts may be absent (providers omit them when unused) and count
+as zero. Fixed on 2026-09-30: until then missing counts defaulted to zero, so
+a real `gpt-4o` call replayed without usage was stored with `cost_usd = 0`.
+
 ## Which model identifier is used for the price lookup
 
 `response_model` first, `request_model` as a fallback (`ModelCallEvent` has both;

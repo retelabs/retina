@@ -1,11 +1,11 @@
-Source : https://github.com/open-telemetry/opentelemetry-proto.git
-Ref demandée : v1.11.0
-Commit résolu : 790608c4d51e6ffc12210b541e8514cbed9e91a4
-Épinglé le : 2026-08-14T11:19:28Z
+Source: https://github.com/open-telemetry/opentelemetry-proto.git
+Requested ref: v1.11.0
+Resolved commit: 790608c4d51e6ffc12210b541e8514cbed9e91a4
+Pinned on: 2026-08-14T11:19:28Z
 
-Ne pas éditer ce répertoire à la main. Pour changer le pin :
-scripts/pin-otlp-proto.sh <nouvelle-ref>
+Do not edit this directory by hand. To change the pin:
+scripts/pin-otlp-proto.sh <new-ref>
 
-Le receiver tonic/prost (étape 2 du kernel) doit compiler les .proto depuis
-ce répertoire, pas depuis une copie ad hoc ou une version différente
-récupérée via une crate tierce.
+The tonic/prost receiver (kernel step 2) must compile the .proto files from
+this directory, not from an ad hoc copy or a different version pulled in
+through a third-party crate.

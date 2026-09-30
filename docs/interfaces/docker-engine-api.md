@@ -174,7 +174,7 @@ progression jusqu'à la fin (ou une erreur).
   workspace Cargo, pas seulement leur propre crate.
 - **`.dockerignore` respecté, mais volontairement réduit** : matching par
   composant de chemin à n'importe quelle profondeur (`target/`,
-  `.fastembed_cache/`, `.git/`, `.gitlab-ci.yml`, `*.md`) — pas d'ancrage
+  `.fastembed_cache/`, `.git/`, `.github/`, `*.md`) — pas d'ancrage
   via `/` en tête, pas de négation `!`. Le vrai `.dockerignore` de ce repo
   n'a besoin ni de l'un ni de l'autre ; documenté comme une réduction
   assumée, pas une réimplémentation partielle qui prétendrait être complète.
@@ -188,7 +188,7 @@ progression jusqu'à la fin (ou une erreur).
   d'abord.
 - **`ImageSource::Local` reste disponible** pour un service dont ce control
   plane ne doit gérer l'image ni en la tirant ni en la construisant — plus
-  utilisé par la topologie Venice aujourd'hui, mais un choix valide de
+  utilisé par la topologie Retina aujourd'hui, mais un choix valide de
   l'API.
 
 Trouvaille réelle : `BuildInfo` (chaque événement du flux `/build`) n'a pas

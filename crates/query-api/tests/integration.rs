@@ -25,6 +25,32 @@ use tower::ServiceExt;
 
 const TEST_API_KEY: &str = "test-key";
 
+/// A trace id no earlier run used: rows are no longer purged between runs
+/// (see `recent_ns`), so a fixed id would find the previous runs' rows too.
+/// First byte `tag` keeps ids readable per test; the rest is the clock.
+fn unique_trace_id(tag: u8) -> TraceId {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let mut bytes = nanos.to_be_bytes();
+    bytes[0] = tag;
+    TraceId::try_from(&bytes[..]).unwrap()
+}
+
+/// A start time in the recent past, in Unix nanoseconds. The `spans` table
+/// drops rows 90 days after `start_time` (migration 0002): a fixture dated
+/// 1970 is already expired when inserted and disappears at the next
+/// background merge, so a read-back then races that merge (seen failing
+/// with 0 rows on 2026-09-30).
+fn recent_ns() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos() as u64
+        - 60_000_000_000
+}
+
 fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
 }
@@ -38,7 +64,7 @@ fn authed_request(uri: impl AsRef<str>) -> Request<Body> {
 }
 
 /// See the identical comment in crates/clickhouse-sink/tests/integration.rs
-/// — env-configurable so this also works against a GitLab CI service
+/// — env-configurable so this also works against a CI service
 /// (reachable by alias, not `localhost`), not just local Docker Compose.
 fn test_client() -> Client {
     Client::default()
@@ -54,13 +80,14 @@ async fn body_json(response: axum::response::Response) -> Value {
 }
 
 async fn seed(client: &Client, trace_id: TraceId) {
+    let t0 = recent_ns();
     let model_call = ConvertedEvent::ModelCall(ModelCallEvent {
         span: SpanContext {
             trace_id,
             span_id: SpanId::try_from(&[1u8; 8][..]).unwrap(),
             parent_span_id: None,
-            start_time_unix_nano: 1_000,
-            end_time_unix_nano: 2_000,
+            start_time_unix_nano: t0 + 1_000,
+            end_time_unix_nano: t0 + 2_000,
             status: SpanStatus::default(),
             error_type: None,
         },
@@ -82,8 +109,8 @@ async fn seed(client: &Client, trace_id: TraceId) {
             trace_id,
             span_id: SpanId::try_from(&[2u8; 8][..]).unwrap(),
             parent_span_id: Some(SpanId::try_from(&[1u8; 8][..]).unwrap()),
-            start_time_unix_nano: 500,
-            end_time_unix_nano: 2_500,
+            start_time_unix_nano: t0 + 500,
+            end_time_unix_nano: t0 + 2_500,
             status: SpanStatus::default(),
             error_type: None,
         },
@@ -113,13 +140,14 @@ async fn seed(client: &Client, trace_id: TraceId) {
 /// in there would break `get_trace_returns_both_spans_ordered_by_start_time`'s
 /// `spans.len() == 2` assertion.
 async fn seed_priced_model_call(client: &Client, trace_id: TraceId) {
+    let t0 = recent_ns();
     let model_call = ConvertedEvent::ModelCall(ModelCallEvent {
         span: SpanContext {
             trace_id,
             span_id: SpanId::try_from(&[3u8; 8][..]).unwrap(),
             parent_span_id: None,
-            start_time_unix_nano: 1_000,
-            end_time_unix_nano: 2_000,
+            start_time_unix_nano: t0 + 1_000,
+            end_time_unix_nano: t0 + 2_000,
             status: SpanStatus::default(),
             error_type: None,
         },
@@ -148,7 +176,7 @@ async fn setup_priced(id_byte: u8) -> (Router, String) {
         "failed to apply migrations — is ClickHouse running? (scripts/dev-clickhouse.sh up)",
     );
 
-    let trace_id = TraceId::try_from(&[id_byte; 16][..]).unwrap();
+    let trace_id = unique_trace_id(id_byte);
     seed_priced_model_call(&client, trace_id).await;
 
     (
@@ -169,7 +197,7 @@ async fn setup(id_byte: u8) -> (Router, String) {
         "failed to apply migrations — is ClickHouse running? (scripts/dev-clickhouse.sh up)",
     );
 
-    let trace_id = TraceId::try_from(&[id_byte; 16][..]).unwrap();
+    let trace_id = unique_trace_id(id_byte);
     seed(&client, trace_id).await;
 
     (

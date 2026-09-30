@@ -6,7 +6,7 @@
 #
 # Build depuis la racine du repo (le contexte doit inclure vendor/, lu par
 # crates/otlp-receiver/build.rs via un chemin relatif) :
-#   docker build -f docker/kernel.Dockerfile -t venice-kernel .
+#   docker build -f docker/kernel.Dockerfile -t retina-kernel .
 
 FROM rust:1.97.1-slim-bookworm AS builder
 WORKDIR /app

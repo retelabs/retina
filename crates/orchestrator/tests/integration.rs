@@ -16,12 +16,12 @@ use orchestrator::docker_client::{
     ensure_running, status, teardown, teardown_all, wait_healthy,
 };
 
-const NETWORK: &str = "venice-orchestrator-test-net";
+const NETWORK: &str = "retina-orchestrator-test-net";
 
 fn clickhouse_test_service(name: &str) -> ManagedService {
     ManagedService {
         name: name.to_string(),
-        image: "clickhouse/clickhouse-server:latest".to_string(),
+        image: "clickhouse/clickhouse-server:26.8.15.10".to_string(),
         image_source: ImageSource::Registry,
         env: vec![
             "CLICKHOUSE_DB=observability".to_string(),
@@ -49,7 +49,7 @@ fn clickhouse_test_service(name: &str) -> ManagedService {
 #[ignore = "requires a local Docker daemon"]
 async fn ensure_running_is_idempotent_and_reaches_healthy() {
     let docker = Docker::connect_with_local_defaults().expect("failed to connect to Docker");
-    let service = clickhouse_test_service("venice-orchestrator-test-clickhouse");
+    let service = clickhouse_test_service("retina-orchestrator-test-clickhouse");
     ensure_network(&docker, NETWORK).await.unwrap();
 
     // Clean slate — a previous failed run shouldn't make this test flaky.
@@ -91,8 +91,8 @@ async fn ensure_running_is_idempotent_and_reaches_healthy() {
 async fn deploy_all_brings_up_a_dependency_chain_and_teardown_all_clears_it() {
     let docker = Docker::connect_with_local_defaults().expect("failed to connect to Docker");
 
-    let dependency = clickhouse_test_service("venice-orchestrator-test-chain-a");
-    let mut dependent = clickhouse_test_service("venice-orchestrator-test-chain-b");
+    let dependency = clickhouse_test_service("retina-orchestrator-test-chain-a");
+    let mut dependent = clickhouse_test_service("retina-orchestrator-test-chain-b");
     dependent.depends_on = vec![dependency.name.clone()];
     // No healthcheck on the dependent — exercises wait_healthy's "running,
     // no healthcheck configured" success path, distinct from the

@@ -1,11 +1,11 @@
-# Venice
+# Retina
 
 Kernel Rust d'observabilité (inspiré OTel/Datadog) pour workflows d'agents
 LLM, avec plugins métiers interprétant des invariants de gouvernance réels
 (fraude, conformité HIPAA/GDPR). Ingestion OTLP/gRPC standard — un vrai SDK
 OpenTelemetry suffit côté client, zéro code custom.
 
-- **Utiliser Venice depuis votre application** → [`docs/client-integration.md`](docs/client-integration.md)
+- **Utiliser Retina depuis votre application** → [`docs/client-integration.md`](docs/client-integration.md)
 - **Décisions produit et architecture** → [`dossier-observabilite-agentique.md`](dossier-observabilite-agentique.md)
 - **Contrats techniques vérifiés** (OTLP, ClickHouse, auth, plugins...) → [`docs/interfaces/`](docs/interfaces/)
 - **Déployer une instance** → `scripts/dev-stack.sh up`, ou `crates/orchestrator` (control plane maison avec une vraie API HTTP)
@@ -25,7 +25,7 @@ Les deux exigent un jeton (`docs/client-integration.md#envoyer-de-la-télémétr
 Miroir strict des 3 endpoints `query-api` — traces récentes, détail d'une
 trace (arbre de spans reconstruit côté client), résumé des métriques
 (tokens/coût/warnings). Pas de nouveau endpoint, juste une interface sur ce
-qui existe déjà. Une intro paginée présente Venice au premier lancement
+qui existe déjà. Une intro paginée présente Retina au premier lancement
 (passable à tout moment) ; le même contenu reste accessible ensuite via
 l'onglet "Help".
 

@@ -1,13 +1,14 @@
 services:
   clickhouse:
-    # Tag "latest" flottant volontairement (confort dev local) : ce n'est pas
-    # une frontière d'interopérabilité à verrouiller comme semconv/OTLP proto
-    # (voir CLAUDE.md). Épingler une version exacte quand le choix
-    # ClickHouse vs managé (ADR à venir) sera tranché pour la prod.
-    # (Le tag "lts" utilisé initialement n'existe plus sur le registre —
-    # vérifié le 2026-08-14 via l'API Docker Hub avant de corriger.)
-    image: clickhouse/clickhouse-server:latest
-    container_name: venice-clickhouse-dev
+    # Version exacte épinglée, partout (compose dev/stack/prod, CI,
+    # orchestrator) : le client `clickhouse` 0.15.1 casse contre 26.9
+    # (`Decompression("incorrect magic number")` dès les migrations,
+    # constaté le 2026-09-30), donc un tag flottant peut couper l'ingestion
+    # au prochain pull. 26.8 est une LTS. Changer de version = changer
+    # toutes les occurrences ensemble (`git grep clickhouse-server:`) et
+    # repasser `scripts/test-integration.sh` avant.
+    image: clickhouse/clickhouse-server:26.8.15.10
+    container_name: retina-clickhouse-dev
     ports:
       - "8123:8123" # HTTP
       - "9000:9000" # native TCP

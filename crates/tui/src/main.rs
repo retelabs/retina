@@ -1,4 +1,4 @@
-//! `venice-tui` — terminal dashboard for `query-api`, the strict mirror of
+//! `retina-tui` — terminal dashboard for `query-api`, the strict mirror of
 //! its 3 endpoints (traces list / trace detail / metrics summary), nothing
 //! query-api doesn't already expose. Reuses `query_api::dto` directly
 //! (`crates/tui/src/api.rs`) instead of a second copy of the wire shape.

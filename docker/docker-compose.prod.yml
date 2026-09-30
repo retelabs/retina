@@ -8,10 +8,10 @@
 # Segmentation réseau — 3 zones, même schéma que client-project
 # (fn-edge/fn-app/fn-data) plutôt qu'un unique réseau bridge implicite :
 #
-#   venice-edge │ Caddy seul — seule zone atteignable depuis l'extérieur
-#   venice-app  │ Caddy ↔ kernel/query-api — logique applicative
-#   venice-data │ kernel/query-api ↔ ClickHouse — zone critique, 0 accès
-#               │ depuis venice-edge (Caddy n'y est pas rattaché du tout)
+#   retina-edge │ Caddy seul — seule zone atteignable depuis l'extérieur
+#   retina-app  │ Caddy ↔ kernel/query-api — logique applicative
+#   retina-data │ kernel/query-api ↔ ClickHouse — zone critique, 0 accès
+#               │ depuis retina-edge (Caddy n'y est pas rattaché du tout)
 #
 #   Internet → Caddy (edge) → kernel/query-api (app) → ClickHouse (data)
 #                    ✗ ────────────────────────────────────────────────
@@ -22,18 +22,18 @@
 #   docker compose -f docker/docker-compose.prod.yml --env-file docker/.env.prod up -d --build
 
 networks:
-  venice-edge:
+  retina-edge:
     driver: bridge
-  venice-app:
+  retina-app:
     driver: bridge
     internal: true    # aucun accès internet direct depuis kernel/query-api
-  venice-data:
+  retina-data:
     driver: bridge
-    internal: true    # zone critique — ClickHouse injoignable depuis venice-edge
+    internal: true    # zone critique — ClickHouse injoignable depuis retina-edge
 
 services:
   clickhouse:
-    image: clickhouse/clickhouse-server:latest
+    image: clickhouse/clickhouse-server:26.8.15.10
     environment:
       CLICKHOUSE_DB: observability
       CLICKHOUSE_USER: ${CLICKHOUSE_USER}
@@ -47,7 +47,7 @@ services:
       timeout: 2s
       retries: 30
     networks:
-      - venice-data    # fn-edge/fn-app n'ont pas accès à ce réseau
+      - retina-data    # fn-edge/fn-app n'ont pas accès à ce réseau
     restart: unless-stopped
 
   kernel:
@@ -68,8 +68,8 @@ services:
     # Pas de port publié sur l'hôte — seul Caddy (ci-dessous) est joignable
     # depuis l'extérieur.
     networks:
-      - venice-app     # reçoit le trafic de Caddy
-      - venice-data    # atteint ClickHouse
+      - retina-app     # reçoit le trafic de Caddy
+      - retina-data    # atteint ClickHouse
     restart: unless-stopped
 
   query-api:
@@ -87,8 +87,8 @@ services:
       QUERY_API_KEY: ${QUERY_API_KEY}
       QUERY_API_KEYS_EXTRA: ${QUERY_API_KEYS_EXTRA:-}
     networks:
-      - venice-app     # reçoit le trafic de Caddy
-      - venice-data    # atteint ClickHouse
+      - retina-app     # reçoit le trafic de Caddy
+      - retina-data    # atteint ClickHouse
     restart: unless-stopped
 
   caddy:
@@ -108,8 +108,8 @@ services:
       - caddy-data:/data
       - caddy-config:/config
     networks:
-      - venice-edge    # seule zone avec une route internet
-      - venice-app     # pour atteindre kernel/query-api par nom
+      - retina-edge    # seule zone avec une route internet
+      - retina-app     # pour atteindre kernel/query-api par nom
     restart: unless-stopped
 
 volumes:

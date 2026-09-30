@@ -1,4 +1,4 @@
-//! Control plane "maison" pour venice — voir `src/main.rs` pour le contexte
+//! Control plane "maison" pour retina — voir `src/main.rs` pour le contexte
 //! (dossier section 5, objectif d'apprentissage plutôt que choix de cloud).
 
 pub mod api;

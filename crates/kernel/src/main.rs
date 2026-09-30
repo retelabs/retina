@@ -120,6 +120,20 @@ fn build_plugins() -> Vec<Box<dyn Plugin>> {
     select_enabled(available, requested.as_deref())
 }
 
+/// `KERNEL_API_KEY` is required and must not be blank: `KERNEL_API_KEY=` (set but empty, a
+/// common `.env` slip) would otherwise start the process with the token
+/// `""`, i.e. accept `authorization: Bearer ` — fail closed on it exactly
+/// like on an unset key. Pure function, testable without the environment.
+fn primary_api_key(raw: Option<String>) -> Result<String, String> {
+    match raw {
+        Some(key) if !key.trim().is_empty() => Ok(key),
+        Some(_) => {
+            Err("KERNEL_API_KEY is set but blank — see docs/interfaces/kernel-auth.md".to_string())
+        }
+        None => Err("KERNEL_API_KEY must be set — see docs/interfaces/kernel-auth.md".to_string()),
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let clickhouse_url = env_or("CLICKHOUSE_URL", "http://localhost:8123");
@@ -131,8 +145,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Fails closed (docs/interfaces/kernel-auth.md): no "auth disabled"
     // fallback, an unset key must stop the process rather than start it
     // unauthenticated.
-    let api_key = std::env::var("KERNEL_API_KEY")
-        .expect("KERNEL_API_KEY must be set — see docs/interfaces/kernel-auth.md");
+    let api_key =
+        primary_api_key(std::env::var("KERNEL_API_KEY").ok()).unwrap_or_else(|e| panic!("{e}"));
     let mut api_keys = vec![api_key];
     api_keys.extend(parse_extra_tokens(
         std::env::var("KERNEL_API_KEYS_EXTRA").ok().as_deref(),
@@ -170,6 +184,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn primary_api_key_refuses_unset_and_blank() {
+        assert!(primary_api_key(None).is_err());
+        assert!(primary_api_key(Some(String::new())).is_err());
+        assert!(primary_api_key(Some("  ".to_string())).is_err());
+        assert_eq!(primary_api_key(Some("k".to_string())).unwrap(), "k");
+    }
 
     fn sample() -> Vec<(&'static str, &'static str)> {
         vec![("fraudos-plugin", "fraudos"), ("medical-plugin", "medical")]

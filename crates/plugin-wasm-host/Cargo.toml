@@ -9,7 +9,7 @@ kernel-model = { version = "0.1.0", path = "../kernel-model" }
 plugin-api = { version = "0.1.0", path = "../plugin-api" }
 plugin-wasm-wire = { version = "0.1.0", path = "../plugin-wasm-wire" }
 serde_json = "1.0.151"
-wasmtime = { version = "47.0.3", default-features = false, features = ["cranelift", "runtime"] }
+wasmtime = { version = "49.0.1", default-features = false, features = ["cranelift", "runtime"] }
 
 [dev-dependencies]
 plugin-example = { path = "../plugin-example" }

@@ -1,7 +1,7 @@
 # Étape 6 — image du binaire `query-api` (crates/query-api). Voir
 # docker/kernel.Dockerfile pour le contexte général.
 #
-#   docker build -f docker/query-api.Dockerfile -t venice-query-api .
+#   docker build -f docker/query-api.Dockerfile -t retina-query-api .
 
 FROM rust:1.97.1-slim-bookworm AS builder
 WORKDIR /app

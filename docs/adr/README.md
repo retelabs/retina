@@ -1,25 +1,22 @@
 # Architecture Decision Records
 
-Une ADR par décision structurante, notamment les questions ouvertes listées
-en section 5 de
-[dossier-observabilite-agentique.md](../../dossier-observabilite-agentique.md).
+One ADR per structural decision, in particular the open questions listed in
+section 5 of [design-dossier.md](../../design-dossier.md).
 
 ## Index
 
-| ADR | Décision | Statut |
+| ADR | Decision | Status |
 |---|---|---|
-| [0001](0001-multi-tenant-hors-perimetre-mvp.md) | Multi-tenant hors périmètre du MVP | Accepté |
-| [0002](0002-modele-hebergement.md) | Modèle d'hébergement : auto-hébergé sur hardware nu, fournisseur différé | Accepté (principe) — fournisseur non tranché |
-| [0003](0003-clickhouse-auto-heberge.md) | ClickHouse auto-hébergé, pas de service managé | Accepté |
-| [0004](0004-chargement-plugins-natif.md) | Chargement de plugins : trait Rust natif, WASM différé | Accepté (mode natif) — WASM différé, pas rejeté |
+| [0001](0001-multi-tenant-out-of-mvp-scope.md) | Multi-tenancy out of the MVP's scope | Accepted |
+| [0002](0002-hosting-model.md) | Hosting model: self-hosted on bare VMs, provider deferred | Accepted (principle); provider not decided |
+| [0003](0003-self-hosted-clickhouse.md) | Self-hosted ClickHouse, no managed service | Accepted |
+| [0004](0004-native-plugin-loading.md) | Plugin loading: native Rust trait, WASM deferred | Accepted (native mode); WASM deferred, not rejected |
 
-Les 4 rédigées le 2026-08-16, rétroactivement — les décisions elles-mêmes
-avaient déjà été prises et enactées en code au fil du projet (voir
-`CLAUDE.md` pour le détail chronologique de chacune), pas de nouvelle
-décision tranchée par cet exercice de rédaction.
+All four were written on 2026-08-16, after the fact: the decisions themselves
+had already been made and implemented over the course of the project (see
+`CLAUDE.md` for the chronology of each). Writing them down decided nothing new.
 
-Utilise `/adr <titre>` pour créer une nouvelle entrée à partir de
-[0000-template.md](0000-template.md). Numérote séquentiellement
-(`0005-...`, ...). Les décisions à impact produit/coût significatif
-(cloud cible, multi-tenant) se présentent avec leurs trade-offs et attendent
-confirmation avant d'être marquées "Accepté".
+Use `/adr <title>` to create a new entry from [0000-template.md](0000-template.md).
+Number sequentially (`0005-...`, ...). Decisions with a significant product or
+cost impact (target cloud, multi-tenancy) are presented with their trade-offs
+and wait for confirmation before being marked "Accepted".

@@ -1,22 +1,21 @@
-# NNNN. Titre de la décision
+# NNNN. Decision title
 
-Date : YYYY-MM-DD
-Statut : Proposé | Accepté | Rejeté | Remplacé par ADR-XXXX
+Date: YYYY-MM-DD
+Status: Proposed | Accepted | Rejected | Superseded by ADR-XXXX
 
-## Contexte
+## Context
 
-Quel problème force cette décision ? Quelles contraintes (dossier de
-conception, volume attendu, deadline, coût) s'appliquent ?
+What problem forces this decision? Which constraints (design dossier, expected
+volume, deadline, cost) apply?
 
-## Décision
+## Decision
 
-Ce qui est tranché, formulé sans ambiguïté.
+What is decided, stated without ambiguity.
 
-## Conséquences
+## Consequences
 
-Ce que ça implique en pratique (code, ops, coût), y compris les
-compromis acceptés.
+What it implies in practice (code, ops, cost), including the trade-offs accepted.
 
-## Alternatives considérées
+## Alternatives considered
 
-Options écartées et pourquoi.
+Options set aside, and why.

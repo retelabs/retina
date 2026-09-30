@@ -3,8 +3,8 @@
 Kernel Rust d'observabilité (inspiré OTel/Datadog) pour workflows d'agents LLM,
 avec plugins métiers (fintech en premier). Les décisions produit et
 architecture sont tranchées dans
-[dossier-observabilite-agentique.md](dossier-observabilite-agentique.md) —
-c'est la source de vérité, lis-le avant toute décision structurante et ne
+[design-dossier.md](design-dossier.md) (en anglais depuis
+le 2026-09-30) — c'est la source de vérité, lis-le avant toute décision structurante et ne
 duplique pas son contenu ailleurs.
 
 ## Règle permanente

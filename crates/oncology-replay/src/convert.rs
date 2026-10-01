@@ -129,7 +129,7 @@ pub fn convert(run: &OncologyRun) -> Result<ExportTraceServiceRequest, String> {
             resource: Some(Resource {
                 attributes: vec![
                     str_attr("service.name", "oncology-suite"),
-                    str_attr("service.namespace", "oncology-pipeline"),
+                    str_attr("service.namespace", "oncology"),
                 ],
                 ..Default::default()
             }),

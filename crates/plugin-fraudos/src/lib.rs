@@ -2,7 +2,7 @@
 //! (dossier section 2.4: "let the first real vertical inform
 //! [the contract]"), unlike `plugin-example`/`plugin-wasm-example` which are
 //! deliberately generic. Grounded in what `docs/interfaces/fraudos-agentspan.md`
-//! found in the real fraudos-prototype repo: agent runs carry `fraudos.*`
+//! found in the real fraudos prototype: agent runs carry `fraudos.*`
 //! extra_attributes (attached by `crates/fraudos-replay`, not first-class
 //! `kernel-model` fields — the fintech attributes the dossier anticipated in
 //! section 3 never got promoted beyond the generic bag, which is exactly

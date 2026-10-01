@@ -113,7 +113,7 @@ modalités de chargement.
 
 Deuxième vertical réel + câblage du plugin dans le pipeline (2026-08-15) :
 `crates/plugin-medical` interprète les invariants de gouvernance
-**réellement lus** dans `the oncology pipeline repository` (oncologie,
+**réellement lus** dans le dépôt du pipeline oncologie (oncologie,
 cloné en lecture seule) — gate de conformité HIPAA/GDPR déterministe
 (Presidio/NER) et gate HITL (`interrupt_before`), tous deux cités mot pour
 mot depuis le `CLAUDE.md` du repo source. Trouvaille notable : une deuxième
@@ -131,13 +131,13 @@ réelle, pas seulement en test isolé. `query-api::/metrics/summary` expose
 fraudos/oncologie + avertissements attendus retrouvés en base ET dans les
 métriques.
 
-Étape 7 : validé contre le cas fraudos réel (`the fraudos prototype repository`, cloné
+Étape 7 : validé contre le cas fraudos réel (dépôt du prototype fraudos, cloné
 en lecture seule, pas vendoré). **Correction au dossier section 3** :
-`fraudos-prototype` n'a en réalité aucune instrumentation ADOT/OTel — observabilité
+le prototype n'a en réalité aucune instrumentation ADOT/OTel — observabilité
 maison (`AgentSpan` → CloudWatch/DynamoDB) — et le score de fraude vient d'un
 appel outil (`get_transaction_score`), pas de la sortie du LLM. Détails et
 mapping complet dans `docs/interfaces/fraudos-agentspan.md`. Décision prise
-avec l'utilisateur : plutôt que de modifier `fraudos-prototype` (repo séparé,
+avec l'utilisateur : plutôt que de modifier le prototype (repo séparé,
 credentials AWS requises), `crates/fraudos-replay` convertit des `AgentSpan`
 réalistes (fixtures dans `fixtures/`, ancrées sur les vrais noms de rôles/
 outils/modèles du repo) en OTLP et les rejoue en gRPC réel contre
@@ -725,7 +725,7 @@ en mémoire pour ne pas être oubliés d'une session à l'autre.
 
 Venice devient **Retina**, dans l'organisation GitHub `retelabs`
 (`github.com/retelabs/retina`, privé pour l'instant) ; GitLab
-(`the original repository`) reste l'historique d'origine. Raisons : conflit de nom
+(dépôt d'origine, archivé) reste l'historique d'origine. Raisons : conflit de nom
 avec Venice.ai, et écart dépôt (trellis) / produit (Venice). Les sections
 datées ci-dessus gardent l'ancien nom — c'est un journal, pas réécrit.
 

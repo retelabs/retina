@@ -1,5 +1,5 @@
 //! Mirrors the fields of the real `OncologyState`/`OncologyOutput`
-//! (the oncology pipeline repository, `src/state/oncology_state.py`)
+//! (the oncology pipeline's `src/state/oncology_state.py`)
 //! that matter for governance — see docs/interfaces/oncology-governance.md.
 //!
 //! `started_at`/`ended_at` are **not** real `OncologyState` fields (unlike

@@ -1,5 +1,5 @@
 //! Mirrors the real `AgentSpan` dataclass from
-//! the fraudos prototype repository `observability/span.py` (read 2026-08-14,
+//! the fraudos prototype's `observability/span.py` (read 2026-08-14,
 //! see docs/interfaces/fraudos-agentspan.md) — a rollup of one full agent
 //! run, not a per-operation span. Field names/types match `AgentSpan.to_dict()`
 //! exactly so a real CloudWatch/DynamoDB export could deserialize here

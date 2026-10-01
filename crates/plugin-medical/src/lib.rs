@@ -1,5 +1,5 @@
 //! `MedicalPlugin` — governance gates for the oncology vertical, grounded in
-//! explicit invariants read from the real `oncology-pipeline` repo (not
+//! explicit invariants read from the real oncology pipeline's repository (not
 //! invented) — see docs/interfaces/oncology-governance.md.
 //!
 //! Same safety posture as `plugin-fraudos`: no-op on anything that isn't an

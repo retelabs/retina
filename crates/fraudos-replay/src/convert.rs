@@ -163,7 +163,7 @@ pub fn convert(span: &AgentSpan) -> Result<ExportTraceServiceRequest, String> {
             resource: Some(Resource {
                 attributes: vec![
                     str_attr("service.name", "fraudos"),
-                    str_attr("service.namespace", "fraudos-prototype"),
+                    str_attr("service.namespace", "fraudos"),
                 ],
                 ..Default::default()
             }),

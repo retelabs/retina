@@ -129,13 +129,22 @@ pub fn span_tree(spans: &[SpanDto]) -> Vec<(usize, &SpanDto)> {
 /// Coarse "how long ago" for a `start_time_unix_nano` — chosen over an
 /// absolute timestamp to avoid a new date/time dependency for what an
 /// observability TUI mostly needs anyway: recency, not a calendar date.
+/// "1 span", "6 spans".
+pub fn spans_label(count: u64) -> String {
+    if count == 1 {
+        "1 span".to_string()
+    } else {
+        format!("{count} spans")
+    }
+}
+
 pub fn humanize_ago(start_time_unix_nano: u64, now_unix_nano: u64) -> String {
     let elapsed_secs = now_unix_nano.saturating_sub(start_time_unix_nano) / 1_000_000_000;
     match elapsed_secs {
         0..=59 => format!("{elapsed_secs}s"),
         60..=3599 => format!("{}m", elapsed_secs / 60),
         3600..=86399 => format!("{}h", elapsed_secs / 3600),
-        _ => format!("{}j", elapsed_secs / 86400),
+        _ => format!("{}d", elapsed_secs / 86400),
     }
 }
 
@@ -239,5 +248,14 @@ mod tests {
         let now = 100 * 1_000_000_000;
         assert_eq!(humanize_ago(now - 5 * 1_000_000_000, now), "5s");
         assert_eq!(humanize_ago(now - 90 * 1_000_000_000, now), "1m");
+        // Days are "d", not the French "j" (jours) the UI used to print.
+        let day = 86_400 * 1_000_000_000;
+        assert_eq!(humanize_ago(0, 47 * day), "47d");
+    }
+
+    #[test]
+    fn span_counts_agree_in_number() {
+        assert_eq!(spans_label(1), "1 span");
+        assert_eq!(spans_label(6), "6 spans");
     }
 }

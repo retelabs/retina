@@ -9,7 +9,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Tabs};
 
-use crate::app::{App, View, humanize_ago, span_tree};
+use crate::app::{App, View, humanize_ago, span_tree, spans_label};
 use crate::content;
 
 /// The violet of the Retina mark (`#8B7CF8`, `UI/assets/logos/`) — an
@@ -279,9 +279,9 @@ fn draw_traces(frame: &mut Frame, area: Rect, app: &App) {
         .map(|t| {
             let ago = humanize_ago(t.start_time_unix_nano, now);
             let line = format!(
-                "{}  ·  {} spans  ·  {ago} ago",
+                "{}  ·  {}  ·  {ago} ago",
                 &t.trace_id[..t.trace_id.len().min(16)],
-                t.span_count
+                spans_label(t.span_count)
             );
             ListItem::new(line)
         })
@@ -335,12 +335,12 @@ fn draw_trace_detail(frame: &mut Frame, area: Rect, app: &App) {
         .collect();
 
     let title = format!(
-        " Trace {} — {} spans (Esc to go back) ",
+        " Trace {} — {} (Esc to go back) ",
         app.trace_spans
             .first()
             .map(|s| s.trace_id.as_str())
             .unwrap_or(""),
-        app.trace_spans.len()
+        spans_label(app.trace_spans.len() as u64)
     );
 
     let paragraph = Paragraph::new(lines).block(retina_block(&title));

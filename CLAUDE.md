@@ -754,6 +754,42 @@ construites à chaque passage, poussées seulement sur tag `v*` ou à la main
 (quota GHCR privé : 500 Mo, voir `docs/cost-model.md`). Déclenchée sur main,
 les PR et à la main, pas sur chaque push de dev.
 
+## État au 2026-10-02 (passation de session)
+
+**Public** : `github.com/retelabs/retina` (Apache-2.0), historique réécrit le
+2026-10-01 avec `git filter-repo` (noms de clients, domaine de prod, URL des
+autres dépôts du propriétaire et chemins locaux remplacés ; l'arbre de `dev`
+est resté identique au bit près). `retelabs/retina-history` (privé) garde
+l'ancien historique **avec** les noms : ne jamais le publier. Le projet
+GitLab d'origine, public du 2026-08-14 au 2026-10-01, est passé privé et
+archivé par l'utilisateur. Rapport d'audit et plan :
+`~/dev/data-ai-ml/trellis-audit-2026-09-30.md` (hors dépôt) ; phases 0
+(stabiliser) et 1 (migrer, renommer, nettoyer, traduire) faites.
+
+Fait sur la période (tout sur `main`, CI verte) : ClickHouse épinglé
+26.8.15.10 partout ; 6 avis RustSec corrigés ; clé API vide refusée ;
+fixtures datées d'aujourd'hui + trace_id uniques (test instable corrigé) ;
+`scripts/test-integration.sh` (26/26 avec `--with-docker`) ; CI GitHub
+Actions ; Apache-2.0 ; code, docs, scripts en anglais ; logo iris ;
+coût `NULL` (plus `0`) sans comptes de tokens d'entrée **et** de sortie ;
+TUI : « 47d » au lieu de « 47j », « 1 span » ; README public étoffé
+(architecture Mermaid, vraies captures du TUI en SVG dans `docs/assets/`).
+
+**Problème ouvert** : sur le nouveau dépôt, les événements `push` et
+`pull_request` ne déclenchent **pas** le workflow `ci` (les événements
+arrivent, la revue Copilot tourne, `workflow_dispatch` marche). D'ici à
+trouver la cause (réglages Actions de l'organisation, droits non
+disponibles ici) : `gh workflow run ci -R retelabs/retina --ref dev` avant
+chaque fusion. Chaque lancement manuel pousse aussi les images GHCR
+(étiquette `manual`).
+
+**Suite possible** (phase 2 du plan d'audit) : écrivain bufferisé vers
+ClickHouse avec backpressure, limites tonic (concurrence, timeout),
+rétention configurable, limites WASM (fuel, mémoire) avant tout plugin
+tiers ; puis métriques et logs OTLP, intégration avec Cairn. Déploiement :
+toujours manuel sur le VPS ; avant de redéployer, vérifier vers quel dépôt
+pointe le clone du serveur et `SELECT version()` de ClickHouse.
+
 ## Interface terminal (`crates/tui`) — fait (2026-08-17)
 
 Avant le chantier cloud : un front demandé par l'utilisateur, tranché en
